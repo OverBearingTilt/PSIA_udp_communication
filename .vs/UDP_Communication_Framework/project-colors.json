@@ -1,0 +1,11 @@
+{
+  "Version": 1,
+  "ProjectMap": {
+    "21d0050f-3d4f-4573-bf88-dcc5f03d632f": {
+      "ProjectGuid": "21d0050f-3d4f-4573-bf88-dcc5f03d632f",
+      "DisplayName": "UDP_Communication_Framework",
+      "ColorIndex": 0
+    }
+  },
+  "NextColorIndex": 1
+}
