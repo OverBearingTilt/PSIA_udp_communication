@@ -12,54 +12,59 @@
 #define NAME_LEN 64
 
 
-
 #define SENDER
 //#define RECEIVER
 
 #ifdef SENDER
-#define TARGET_PORT 5555
-#define LOCAL_PORT 8888
+#define TARGET_PORT 8888
+#define LOCAL_PORT 5555
 #endif // SENDER
 
 #ifdef RECEIVER
-#define TARGET_PORT 8888
-#define LOCAL_PORT 5555
+#define TARGET_PORT 5555
+#define LOCAL_PORT 8888
 #endif // RECEIVER
 
-typedef struct  {
-	char fileName[NAME_LEN];
-} PacketFileName;
-
-typedef struct  {
-	char data[BUFFERS_LEN];
-	// _Bool is_last; ???
-} PacketData;
+//typedef struct  {
+//	char fileName[NAME_LEN];
+//} PacketFileName;
+//
+//typedef struct  {
+//	char data[BUFFERS_LEN];
+//	// _Bool is_last; ???
+//} PacketData;
 
 typedef struct {
-	short type;
-	short crc;
+	char type;
+	int seqNum;
+	int dataSize;
 	union {
-		PacketFileName fileNamePacket;
-		PacketData dataPacket;
+		char fileName[NAME_LEN];
+		char data[BUFFERS_LEN];
 	};
+	//int crc;
+
 } Packet;
 
-// typedef ACK packet
 
 typedef enum {
 	FILESIZE,
-	DATA
+	DATA,
+	FIN
 } PacketType;
-
-//typedef struct PacketData {
-//	char data[BUFFERS_LEN];
-//};
 
 void InitWinsock()
 {
 	WSADATA wsaData;
 	WSAStartup(MAKEWORD(2, 2), &wsaData);
 }
+
+void reset_data(char data[BUFFERS_LEN]) {
+	for (int i = 0; i < BUFFERS_LEN; i++) {
+		data[i] = 0;
+	}
+}
+
 
 //**********************************************************************
 int main()
@@ -94,35 +99,61 @@ int main()
 	addrDest.sin_port = htons(TARGET_PORT);
 	InetPton(AF_INET, _T(TARGET_IP), &addrDest.sin_addr.s_addr);
 
-	char FILENAME[NAME_LEN] = "ReadMe.txt";
+	char* FILENAME = "ReadHim.txt";
 
 	// load the file to be sent
-	FILE* file_in = fopen(FILENAME, "r");
+	FILE* file_in = fopen("in/ReadHim.txt", "rb");
 
+	// send first packet
 	Packet fileNamePacket;
-	Packet dataPacket;
 	
 	fileNamePacket.type = FILESIZE;
-	strcpy(fileNamePacket.fileNamePacket.fileName, FILENAME);
-	printf("sending file name packet: %s\n", fileNamePacket.fileNamePacket.fileName);
-	sendto(socketS, (char*)fileNamePacket, sizeof(Packet), 0, (sockaddr*)&addrDest, sizeof(addrDest));
+	fileNamePacket.seqNum = 0;
+	fileNamePacket.dataSize = 11;
+	strcpy(fileNamePacket.fileName, FILENAME);
 
+	printf("sending file name packet: %s\n", fileNamePacket.fileName);
+	sendto(socketS, (char*)&fileNamePacket, sizeof(Packet), 0, (sockaddr*)&addrDest, sizeof(addrDest));
 
-	//for (char c; fread(c, 1, 1, file_in) != EOF;) { // maybe read entire buffersize?
-	//	if (i > BUFFERS_LEN) {
-	//		// send packet and reset data
-	//		i = 0;
-	//	}
-	//	packet_tx.data[i] == c;
-	//	i++;
-	//}
-	//if (i != 0) {
-	//	// send the remaining data
-	//}
+	// send data
+	Packet dataPacket;
+
+	dataPacket.type = DATA;
+	dataPacket.seqNum = 1;
+	int i = 0;
+	for (char c = 0; fread(&c, 1, 1, file_in) == 1; ) { // maybe read entire buffersize?
+		if (i > BUFFERS_LEN) {
+			// send packet and reset data
+			dataPacket.dataSize = i;
+			printf("sending data packet number %d\n", dataPacket.seqNum);
+			sendto(socketS, (char*)&dataPacket, sizeof(Packet), 0, (sockaddr*)&addrDest, sizeof(addrDest));
+			reset_data(dataPacket.data);
+			i = 0;
+			dataPacket.seqNum++;
+		}
+		dataPacket.data[i] = c;
+		i++;
+	}
+	fclose(file_in);
+	if (i != 0) {
+		// send the remaining data
+		dataPacket.dataSize = i;
+		printf("sending remainder data packet number %d\n", dataPacket.seqNum);
+		sendto(socketS, (char*)&dataPacket, sizeof(Packet), 0, (sockaddr*)&addrDest, sizeof(addrDest));
+		dataPacket.seqNum++;
+	}
 	
-	strncpy(buffer_tx, "Hello world payload!\n", BUFFERS_LEN); //put some data to buffer
-	printf("Sending packet.\n");
-	sendto(socketS, buffer_tx, strlen(buffer_tx), 0, (sockaddr*)&addrDest, sizeof(addrDest));	
+	// send final packet
+	printf("sending finish packet number %d\n", dataPacket.seqNum);
+	Packet finPacket;
+	finPacket.type = FIN;
+	finPacket.seqNum = dataPacket.seqNum;
+	finPacket.dataSize = 0;
+	sendto(socketS, (char*)&finPacket, sizeof(Packet), 0, (sockaddr*)&addrDest, sizeof(addrDest));
+
+	//strncpy(buffer_tx, "Hello world payload!\n", BUFFERS_LEN); //put some data to buffer
+	//printf("Sending packet.\n");
+	//sendto(socketS, buffer_tx, strlen(buffer_tx), 0, (sockaddr*)&addrDest, sizeof(addrDest));	
 
 	closesocket(socketS);
 
@@ -130,28 +161,60 @@ int main()
 
 #ifdef RECEIVER
 
-
-	_Bool continue_listening = true;
-	stuPacket packet_rx;
-	while (continue_listening) {
-		if (recvfrom(socketS, buffer_rx, sizeof(buffer_rx), 0, (sockaddr*)&from, &fromlen) == SOCKET_ERROR) {
-			printf("Socket error!\n");
-			getchar();
-			return 1;
-		}
-		else
-	
-	}
-
-	strncpy(buffer_rx, "No data received.\n", BUFFERS_LEN);
-	printf("Waiting for datagram ...\n");
-	if(recvfrom(socketS, buffer_rx, sizeof(buffer_rx), 0, (sockaddr*)&from, &fromlen) == SOCKET_ERROR){
+	Packet fileNamePacket;
+	char* fileName;
+	FILE* file_out;
+	bool continue_listening = false;
+	printf("waiting for a packet\n");
+	if (recvfrom(socketS, (char*)&fileNamePacket, sizeof(Packet), 0, (sockaddr*)&from, &fromlen) == SOCKET_ERROR) {
 		printf("Socket error!\n");
 		getchar();
 		return 1;
 	}
-	else
-		printf("Datagram: %s", buffer_rx);
+	else {
+		printf("First packet received!\n");
+		fileName = (char*)malloc(fileNamePacket.dataSize*sizeof(char)+1);
+		if (fileName == NULL) {
+			printf("Malloc failed!\n");
+			return 100;
+		}
+		for (int i = 0; i < fileNamePacket.dataSize; i++) {
+			fileName[i] = fileNamePacket.fileName[i];
+		}
+		fileName[fileNamePacket.dataSize] = '\0';
+		file_out = fopen(fileName, "wb");
+		continue_listening = true;
+	}
+	free(fileName);
+
+	Packet dataPacket;
+	//char data[BUFFERS_LEN];
+	while (continue_listening) {
+		if (recvfrom(socketS, (char*)&dataPacket, sizeof(Packet), 0, (sockaddr*)&from, &fromlen) == SOCKET_ERROR) {
+			printf("Socket error!\n");
+			getchar();
+			return 1;
+		}
+		else {
+			printf("Packet received!\n");
+			if (dataPacket.type == DATA) {
+				fwrite(dataPacket.data, dataPacket.dataSize, 1, file_out);
+			} else if (dataPacket.type == FIN) {
+				continue_listening = false;
+			}
+		}
+	}
+	fclose(file_out);
+
+	//strncpy(buffer_rx, "No data received.\n", BUFFERS_LEN);
+	//printf("Waiting for datagram ...\n");
+	//if(recvfrom(socketS, buffer_rx, sizeof(buffer_rx), 0, (sockaddr*)&from, &fromlen) == SOCKET_ERROR){
+	//	printf("Socket error!\n");
+	//	getchar();
+	//	return 1;
+	//}
+	//else
+	//	printf("Datagram: %s", buffer_rx);
 
 	closesocket(socketS);
 #endif
