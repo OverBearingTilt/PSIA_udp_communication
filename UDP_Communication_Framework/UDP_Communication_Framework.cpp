@@ -6,8 +6,7 @@
 #include <winsock2.h>
 #include "ws2tcpip.h"
 
-#define TARGET_IP	"147.32.221.16"
-// 147.32.216.175
+#define TARGET_IP	"127.0.0.1"
 
 #define BUFFERS_LEN 1024
 #define NAME_LEN 64
