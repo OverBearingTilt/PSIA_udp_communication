@@ -6,36 +6,29 @@
 #include <winsock2.h>
 #include "ws2tcpip.h"
 
-#define TARGET_IP	"127.0.0.1"
+#define TARGET_IP	"147.32.221.16"
+// 147.32.216.175
 
 #define BUFFERS_LEN 1024
 #define NAME_LEN 64
 
 
-#define SENDER
-//#define RECEIVER
+//#define SENDER
+#define RECEIVER
 
 #ifdef SENDER
-#define TARGET_PORT 8888
-#define LOCAL_PORT 5555
+#define TARGET_PORT 5001
+#define LOCAL_PORT 5000
 #endif // SENDER
 
 #ifdef RECEIVER
-#define TARGET_PORT 5555
-#define LOCAL_PORT 8888
+#define TARGET_PORT 5000
+#define LOCAL_PORT 5001
 #endif // RECEIVER
 
-//typedef struct  {
-//	char fileName[NAME_LEN];
-//} PacketFileName;
-//
-//typedef struct  {
-//	char data[BUFFERS_LEN];
-//	// _Bool is_last; ???
-//} PacketData;
 
 typedef struct {
-	char type;
+	char type; // 0 == FILSIZE, 1 == DATA, 2 == FINAL
 	int seqNum;
 	int dataSize;
 	union {
@@ -50,7 +43,7 @@ typedef struct {
 typedef enum {
 	FILESIZE,
 	DATA,
-	FIN
+	FINAL
 } PacketType;
 
 void InitWinsock()
@@ -99,17 +92,18 @@ int main()
 	addrDest.sin_port = htons(TARGET_PORT);
 	InetPton(AF_INET, _T(TARGET_IP), &addrDest.sin_addr.s_addr);
 
-	char* FILENAME = "ReadHim.txt";
+	char* FILENAME = "randomPlane.jpg";
 
 	// load the file to be sent
-	FILE* file_in = fopen("in/ReadHim.txt", "rb");
+	FILE* file_in = fopen("C:/Programovani/PSIA/Images/randomPlane.jpg", "rb");
 
 	// send first packet
 	Packet fileNamePacket;
 	
 	fileNamePacket.type = FILESIZE;
 	fileNamePacket.seqNum = 0;
-	fileNamePacket.dataSize = 11;
+	fileNamePacket.dataSize = strlen(FILENAME);
+	printf("%d", fileNamePacket.dataSize);
 	strcpy(fileNamePacket.fileName, FILENAME);
 
 	printf("sending file name packet: %s\n", fileNamePacket.fileName);
@@ -122,14 +116,16 @@ int main()
 	dataPacket.seqNum = 1;
 	int i = 0;
 	for (char c = 0; fread(&c, 1, 1, file_in) == 1; ) { // maybe read entire buffersize?
-		if (i > BUFFERS_LEN) {
+		if (i >= BUFFERS_LEN) {
 			// send packet and reset data
 			dataPacket.dataSize = i;
 			printf("sending data packet number %d\n", dataPacket.seqNum);
 			sendto(socketS, (char*)&dataPacket, sizeof(Packet), 0, (sockaddr*)&addrDest, sizeof(addrDest));
-			reset_data(dataPacket.data);
+			//reset_data(dataPacket.data);
 			i = 0;
 			dataPacket.seqNum++;
+			// wait
+			Sleep(50);
 		}
 		dataPacket.data[i] = c;
 		i++;
@@ -146,7 +142,7 @@ int main()
 	// send final packet
 	printf("sending finish packet number %d\n", dataPacket.seqNum);
 	Packet finPacket;
-	finPacket.type = FIN;
+	finPacket.type = FINAL;
 	finPacket.seqNum = dataPacket.seqNum;
 	finPacket.dataSize = 0;
 	sendto(socketS, (char*)&finPacket, sizeof(Packet), 0, (sockaddr*)&addrDest, sizeof(addrDest));
@@ -183,12 +179,12 @@ int main()
 		}
 		fileName[fileNamePacket.dataSize] = '\0';
 		file_out = fopen(fileName, "wb");
+		printf("receiving file named: %s\n", fileName);
 		continue_listening = true;
 	}
 	free(fileName);
 
 	Packet dataPacket;
-	//char data[BUFFERS_LEN];
 	while (continue_listening) {
 		if (recvfrom(socketS, (char*)&dataPacket, sizeof(Packet), 0, (sockaddr*)&from, &fromlen) == SOCKET_ERROR) {
 			printf("Socket error!\n");
@@ -196,14 +192,15 @@ int main()
 			return 1;
 		}
 		else {
-			printf("Packet received!\n");
+			printf("Packet received!, number : %d\n", dataPacket.seqNum);
 			if (dataPacket.type == DATA) {
 				fwrite(dataPacket.data, dataPacket.dataSize, 1, file_out);
-			} else if (dataPacket.type == FIN) {
+			} else if (dataPacket.type == FINAL) {
 				continue_listening = false;
 			}
 		}
 	}
+	printf("Finished\n");
 	fclose(file_out);
 
 	//strncpy(buffer_rx, "No data received.\n", BUFFERS_LEN);
