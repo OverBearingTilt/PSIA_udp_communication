@@ -9,14 +9,20 @@
 #include <cstdint>
 #include <algorithm>
 
+#include "CRC.h"
+#include <iomanip>  // Includes ::std::hex
+#include <iostream> // Includes ::std::cout
+#include <cstdint>  // Includes ::std::uint32_t
+
+
 #define TARGET_IP	"127.0.0.1"
 
 #define BUFFERS_LEN 1024
 #define NAME_LEN 64
+#define TOLERANCE 100
 
-
-//#define SENDER
-#define RECEIVER
+#define SENDER
+//#define RECEIVER
 
 #ifdef SENDER
 #define TARGET_PORT 5001
@@ -45,7 +51,7 @@ typedef enum {
 	FILESIZE,
 	DATA,
 	FINAL,
-	ANSWER
+	ANSWER  // ones - OK, zeroes - send again
 } PacketType;
 
 void InitWinsock()
@@ -64,6 +70,18 @@ void setBufferToInt(char* buffer, size_t size, char setTo) {
 	std::fill(buffer, buffer + size, static_cast<char>(setTo));
 }
 
+bool isBufferAllZeroes(const char* buffer, int size) {
+	int errorCount = 0;
+	for (int i = 0; i < size; i++) {
+		if (buffer[i] != static_cast<char>(0)) {
+			++errorCount;
+			if (errorCount > TOLERANCE) {
+				return false;
+			}
+		}
+	}
+	return true;
+}
 
 //**********************************************************************
 int main()
@@ -103,46 +121,78 @@ int main()
 	// load the file to be sent
 	FILE* file_in = fopen("C:/Programovani/PSIA/Images/randomPlane.jpg", "rb");
 
+
 	// send first packet
 	Packet fileNamePacket;
-	
 	fileNamePacket.type = FILESIZE;
 	fileNamePacket.seqNum = 0;
 	fileNamePacket.dataSize = strlen(FILENAME);
-	printf("%d", fileNamePacket.dataSize);
+	fileNamePacket.crc = CRC::Calculate(fileNamePacket.data, fileNamePacket.dataSize, CRC::CRC_32());
 	strcpy(fileNamePacket.fileName, FILENAME);
-
 	printf("sending file name packet: %s\n", fileNamePacket.fileName);
 	sendto(socketS, (char*)&fileNamePacket, sizeof(Packet), 0, (sockaddr*)&addrDest, sizeof(addrDest));
 
+
 	// send data
 	Packet dataPacket;
-
+	Packet ansPacket;
 	dataPacket.type = DATA;
 	dataPacket.seqNum = 1;
 	int i = 0;
+	bool delivered = false;
 	for (char c = 0; fread(&c, 1, 1, file_in) == 1; ) { // maybe read entire buffersize?
 		if (i >= BUFFERS_LEN) {
-			// send packet and reset data
-			dataPacket.dataSize = i;
-			printf("sending data packet number %d\n", dataPacket.seqNum);
-			sendto(socketS, (char*)&dataPacket, sizeof(Packet), 0, (sockaddr*)&addrDest, sizeof(addrDest));
-			//reset_data(dataPacket.data);
-			i = 0;
-			dataPacket.seqNum++;
-			// wait
-			Sleep(50);
+			while (!delivered) {
+				// send packet and reset data
+				dataPacket.dataSize = i;
+				// calculate CRC
+				dataPacket.crc = CRC::Calculate(dataPacket.data, dataPacket.dataSize, CRC::CRC_32());
+				printf("sending data packet number %d\n", dataPacket.seqNum);
+				sendto(socketS, (char*)&dataPacket, sizeof(Packet), 0, (sockaddr*)&addrDest, sizeof(addrDest));
+				//reset_data(dataPacket.data);
+				i = 0;
+				dataPacket.seqNum++;
+
+				// wait for answer
+				printf("Waiting for answer\n");
+				if (recvfrom(socketS, (char*)&ansPacket, sizeof(Packet), 0, (sockaddr*)&from, &fromlen) == SOCKET_ERROR) {
+					printf("Socket error!\n");
+					getchar();
+					return 1;
+				}
+				else {
+					delivered = isBufferAllZeroes(ansPacket.data, ansPacket.dataSize) ? false : true;
+					printf("Answer received: %d\n", delivered);
+				}
+			}
+			delivered = false;
 		}
 		dataPacket.data[i] = c;
 		i++;
 	}
 	fclose(file_in);
 	if (i != 0) {
-		// send the remaining data
-		dataPacket.dataSize = i;
-		printf("sending remainder data packet number %d\n", dataPacket.seqNum);
-		sendto(socketS, (char*)&dataPacket, sizeof(Packet), 0, (sockaddr*)&addrDest, sizeof(addrDest));
-		dataPacket.seqNum++;
+		delivered = false;
+		while (!delivered) {
+			// send the remaining data
+			dataPacket.dataSize = i;
+			dataPacket.crc = CRC::Calculate(dataPacket.data, dataPacket.dataSize, CRC::CRC_32());
+			printf("sending remainder data packet number %d\n", dataPacket.seqNum);
+			sendto(socketS, (char*)&dataPacket, sizeof(Packet), 0, (sockaddr*)&addrDest, sizeof(addrDest));
+			dataPacket.seqNum++;
+
+			// wait for answer
+			printf("Waiting for answer\n");
+			if (recvfrom(socketS, (char*)&ansPacket, sizeof(Packet), 0, (sockaddr*)&from, &fromlen) == SOCKET_ERROR) {
+				printf("Socket error!\n");
+				getchar();
+				return 1;
+			}
+			else {
+				delivered = isBufferAllZeroes(ansPacket.data, ansPacket.dataSize) ? false : true;
+				printf("Answer received: %d\n", delivered);
+			}
+		}
 	}
 	
 	// send final packet
@@ -152,10 +202,6 @@ int main()
 	finPacket.seqNum = dataPacket.seqNum;
 	finPacket.dataSize = 0;
 	sendto(socketS, (char*)&finPacket, sizeof(Packet), 0, (sockaddr*)&addrDest, sizeof(addrDest));
-
-	//strncpy(buffer_tx, "Hello world payload!\n", BUFFERS_LEN); //put some data to buffer
-	//printf("Sending packet.\n");
-	//sendto(socketS, buffer_tx, strlen(buffer_tx), 0, (sockaddr*)&addrDest, sizeof(addrDest));	
 
 	closesocket(socketS);
 

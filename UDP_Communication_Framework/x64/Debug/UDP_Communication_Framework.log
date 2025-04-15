@@ -1,4 +1,5 @@
 ﻿  UDP_Communication_Framework.cpp
-C:\Programovani\PSIA\PSIA_udp_communication\UDP_Communication_Framework\UDP_Communication_Framework.cpp(86,7): warning C4101: 'buffer_tx': unreferenced local variable
-C:\Programovani\PSIA\PSIA_udp_communication\UDP_Communication_Framework\UDP_Communication_Framework.cpp(85,7): warning C4101: 'buffer_rx': unreferenced local variable
+C:\Programovani\PSIA\PSIA_udp_communication\UDP_Communication_Framework\UDP_Communication_Framework.cpp(124,34): warning C4267: '=': conversion from 'size_t' to 'int', possible loss of data
+C:\Programovani\PSIA\PSIA_udp_communication\UDP_Communication_Framework\UDP_Communication_Framework.cpp(105,7): warning C4101: 'buffer_tx': unreferenced local variable
+C:\Programovani\PSIA\PSIA_udp_communication\UDP_Communication_Framework\UDP_Communication_Framework.cpp(104,7): warning C4101: 'buffer_rx': unreferenced local variable
   UDP_Communication_Framework.vcxproj -> C:\Programovani\PSIA\PSIA_udp_communication\x64\Debug\UDP_Communication_Framework.exe
