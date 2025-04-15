@@ -5,6 +5,9 @@
 #include "stdafx.h"
 #include <winsock2.h>
 #include "ws2tcpip.h"
+#include "CRC.h"
+#include <cstdint>
+#include <algorithm>
 
 #include "CRC.h"
 #include <iomanip>  // Includes ::std::hex
@@ -64,6 +67,10 @@ void reset_data(char data[BUFFERS_LEN]) {
 	}
 }
 
+void setBufferToInt(char* buffer, size_t size, char setTo) {
+	std::fill(buffer, buffer + size, static_cast<char>(setTo));
+}
+
 bool isBufferAllZeroes(const char* buffer, int size) {
 	int errorCount = 0;
 	for (int i = 0; i < size; i++) {
@@ -75,7 +82,6 @@ bool isBufferAllZeroes(const char* buffer, int size) {
 		}
 	}
 	return true;
-
 }
 
 //**********************************************************************
@@ -241,7 +247,29 @@ int main()
 		else {
 			printf("Packet received!, number : %d\n", dataPacket.seqNum);
 			if (dataPacket.type == DATA) {
-				fwrite(dataPacket.data, dataPacket.dataSize, 1, file_out);
+				//--------------PACKET INIT---------------------------------
+				sockaddr_in addrDest;
+				addrDest.sin_family = AF_INET;
+				addrDest.sin_port = htons(TARGET_PORT);
+				InetPton(AF_INET, _T(TARGET_IP), &addrDest.sin_addr.s_addr);
+				Packet answerPacket;
+				answerPacket.type = ANSWER;
+				answerPacket.seqNum = dataPacket.seqNum;
+				answerPacket.dataSize = dataPacket.dataSize;
+				//--------------/PACKET INIT---------------------------------
+
+
+				std::uint32_t crc = CRC::Calculate(dataPacket.data, dataPacket.dataSize, CRC::CRC_32());
+				char setTo = 1;
+				(crc == dataPacket.crc) ? fwrite(dataPacket.data, dataPacket.dataSize, 1, file_out) : setTo = 0;
+				setBufferToInt(answerPacket.data, answerPacket.dataSize, setTo);
+
+
+				//-----------------------------------------PACKET SENDING---------------------------------------------
+				printf("sending answer packet all: %d with seqNum: %d\n", setTo, answerPacket.seqNum);
+				sendto(socketS, (char*)&answerPacket, sizeof(Packet), 0, (sockaddr*)&addrDest, sizeof(addrDest));
+				//----------------------------------------/PACKET SENDING----------------------------------------------
+
 			} else if (dataPacket.type == FINAL) {
 				continue_listening = false;
 			}
