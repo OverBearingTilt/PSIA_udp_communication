@@ -5,12 +5,8 @@
 #include "stdafx.h"
 #include <winsock2.h>
 #include "ws2tcpip.h"
-#include "CRC.h"
-#include <cstdint>
 #include <algorithm>
-
 #include "CRC.h"
-#include <iomanip>  // Includes ::std::hex
 #include <iostream> // Includes ::std::cout
 #include <cstdint>  // Includes ::std::uint32_t
 
