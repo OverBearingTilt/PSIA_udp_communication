@@ -32,5 +32,8 @@
     <ClCompile Include="UDP_Communication_Framework.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="sha256.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
   </ItemGroup>
 </Project>
