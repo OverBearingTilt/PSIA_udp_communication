@@ -51,3 +51,5 @@ Makefile
 # Ignore user secrets and config folders
 *.userprefs
 *.userconfig
+/UDP_Communication_Framework/track.mp3
+/UDP_Communication_Framework/velebil-gun.png
