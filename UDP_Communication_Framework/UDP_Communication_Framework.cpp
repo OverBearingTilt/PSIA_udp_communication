@@ -22,6 +22,7 @@
 #define NAME_LEN 64
 #define SHA256_LEN 64
 #define TOLERANCE 100
+#define TIMEOUT_SEC 1
 
 #define RED "\x1b[31m"
 #define GREEN "\x1b[32m"
@@ -110,6 +111,7 @@ int runReceiver() {
 	SHA256 sha256;
 	bool sha256_ok = false;
 	int retryCounter = 0;
+	int lastSeqNum = -1; //track last processed packet seqNum
 
 	InitWinsock();
 
@@ -138,10 +140,26 @@ int runReceiver() {
 
 	while (retryCounter < 3 && !sha256_ok) {
 		printf("Waiting for a packet\n");
+
 		if (recvfrom(socketS, (char*)&packet, sizeof(Packet), 0, (sockaddr*)&from, &fromlen) == SOCKET_ERROR) {
 			printf("%sSocket error!\n%s", RED, RESET);
 			return 1;
 		}
+
+		if (packet.seqNum == lastSeqNum) {
+			printf("%sDuplicate packet %d received, resending ACK\n%s", YELLOW, packet.seqNum, RESET);
+
+			Packet answerPacket;
+			answerPacket.type = ANSWER_CRC;
+			answerPacket.seqNum = packet.seqNum;
+			answerPacket.dataSize = packet.dataSize;
+			setBufferToNum(answerPacket.data, answerPacket.dataSize, 1); // assume ACK ok for duplicate
+			sendto(socketS, (char*)&answerPacket, sizeof(Packet), 0, (sockaddr*)&addrDest, sizeof(addrDest));
+
+			continue;
+		}
+
+		lastSeqNum = packet.seqNum;
 
 		if (packet.type == FILESIZE) {
 			//allocate file name
@@ -318,14 +336,39 @@ int runSender() {
 			printf("Sending data packet number %d\n", dataPacket.seqNum);
 			sendto(socketS, (char*)&dataPacket, sizeof(Packet), 0, (sockaddr*)&addrDest, sizeof(addrDest));
 
+
+
 			//wait for ACK
-			do {
+			//now with timeout :3
+			bool delivered = false;
+			while (!delivered) {
 				printf("Waiting for answer\n");
-				if (recvfrom(socketS, (char*)&ansPacket, sizeof(Packet), 0, (sockaddr*)&from, &fromlen) == SOCKET_ERROR) {
-					printf("%sSocket error!\n%s", RED, RESET);
+
+				fd_set readfds;
+				FD_ZERO(&readfds);
+				FD_SET(socketS, &readfds);
+
+				struct timeval timeout;
+				timeout.tv_sec = TIMEOUT_SEC;
+				timeout.tv_usec = 0;
+
+				int selectResult = select(0, &readfds, NULL, NULL, &timeout);
+				if (selectResult > 0) {
+					if (recvfrom(socketS, (char*)&ansPacket, sizeof(Packet), 0, (sockaddr*)&from, &fromlen) == SOCKET_ERROR) {
+						printf("%sSocket error!\n%s", RED, RESET);
+						return 1;
+					}
+					delivered = !isBufferAllNum(ansPacket.data, ansPacket.dataSize, 0);
+				}
+				else if (selectResult == 0) {
+					printf("%sACK timeout for packet %d, resending...\n%s", YELLOW, dataPacket.seqNum, RESET);
+					sendto(socketS, (char*)&dataPacket, sizeof(Packet), 0, (sockaddr*)&addrDest, sizeof(addrDest));
+				}
+				else {
+					printf("%sSelect error!\n%s", RED, RESET);
 					return 1;
 				}
-			} while (isBufferAllNum(ansPacket.data, ansPacket.dataSize, 0));
+			}
 			i = 0;
 			dataPacket.seqNum++;
 		}
@@ -340,13 +383,36 @@ int runSender() {
 		sendto(socketS, (char*)&dataPacket, sizeof(Packet), 0, (sockaddr*)&addrDest, sizeof(addrDest));
 
 		//wait for ACK
-		do {
+		//now with timeout :3
+		bool delivered = false;
+		while (!delivered) {
 			printf("Waiting for answer\n");
-			if (recvfrom(socketS, (char*)&ansPacket, sizeof(Packet), 0, (sockaddr*)&from, &fromlen) == SOCKET_ERROR) {
-				printf("%sSocket error!\n%s", RED, RESET);
+
+			fd_set readfds;
+			FD_ZERO(&readfds);
+			FD_SET(socketS, &readfds);
+
+			struct timeval timeout;
+			timeout.tv_sec = TIMEOUT_SEC;
+			timeout.tv_usec = 0;
+
+			int selectResult = select(0, &readfds, NULL, NULL, &timeout);
+			if (selectResult > 0) {
+				if (recvfrom(socketS, (char*)&ansPacket, sizeof(Packet), 0, (sockaddr*)&from, &fromlen) == SOCKET_ERROR) {
+					printf("%sSocket error!\n%s", RED, RESET);
+					return 1;
+				}
+				delivered = !isBufferAllNum(ansPacket.data, ansPacket.dataSize, 0);
+			}
+			else if (selectResult == 0) {
+				printf("%sACK timeout for packet %d, resending...\n%s", YELLOW, dataPacket.seqNum, RESET);
+				sendto(socketS, (char*)&dataPacket, sizeof(Packet), 0, (sockaddr*)&addrDest, sizeof(addrDest));
+			}
+			else {
+				printf("%sSelect error!\n%s", RED, RESET);
 				return 1;
 			}
-		} while (isBufferAllNum(ansPacket.data, ansPacket.dataSize, 0));
+		}
 		dataPacket.seqNum++;
 	}
 
@@ -368,18 +434,40 @@ int runSender() {
 
 	while (!(finalCRC_OK && finalSHA_OK)) {
 		printf("Waiting for final answers\n");
-		if (recvfrom(socketS, (char*)&ansPacket, sizeof(Packet), 0, (sockaddr*)&from, &fromlen) == SOCKET_ERROR) {
-			printf("%sSocket error!\n%s", RED, RESET);
+
+		fd_set readfds;
+		FD_ZERO(&readfds);
+		FD_SET(socketS, &readfds);
+
+		struct timeval timeout;
+		timeout.tv_sec = TIMEOUT_SEC;
+		timeout.tv_usec = 0;
+
+		int selectResult = select(0, &readfds, NULL, NULL, &timeout);
+		if (selectResult > 0) {
+			if (recvfrom(socketS, (char*)&ansPacket, sizeof(Packet), 0, (sockaddr*)&from, &fromlen) == SOCKET_ERROR) {
+				printf("%sSocket error!\n%s", RED, RESET);
+				return 1;
+			}
+			if (ansPacket.type == ANSWER_CRC)
+				finalCRC_OK = !isBufferAllNum(ansPacket.data, ansPacket.dataSize, 0);
+			if (ansPacket.type == ANSWER_SHA) {
+				finalSHA_OK = !isBufferAllNum(ansPacket.data, ansPacket.dataSize, 0);
+				sha256_ok = finalSHA_OK;
+				(sha256_ok) ? printf("sha256 OK\n") : printf("sha256 NOK\n");
+			}
+		}
+		else if (selectResult == 0) {
+			// timeout, resend final packet
+			printf("%sACK timeout for final packet %d, resending...\n%s", YELLOW, finPacket.seqNum, RESET);
+			sendto(socketS, (char*)&finPacket, sizeof(Packet), 0, (sockaddr*)&addrDest, sizeof(addrDest));
+		}
+		else {
+			printf("%sSelect error!\n%s", RED, RESET);
 			return 1;
 		}
-		if (ansPacket.type == ANSWER_CRC)
-			finalCRC_OK = !isBufferAllNum(ansPacket.data, ansPacket.dataSize, 0);
-		if (ansPacket.type == ANSWER_SHA) {
-			finalSHA_OK = !isBufferAllNum(ansPacket.data, ansPacket.dataSize, 0);
-			sha256_ok = finalSHA_OK;
-			(sha256_ok) ? printf("sha256 OK\n") : printf("sha256 NOK\n");
-		}
 	}
+
 
 	closesocket(socketS);
 	return 0;
