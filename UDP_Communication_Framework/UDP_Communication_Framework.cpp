@@ -261,6 +261,10 @@ int runReceiver() {
 					fileName = nullptr;
 				}
 			}
+			else {
+				setBufferToNum(answerPacket.data, answerPacket.dataSize, 1); // assume ACK ok for duplicate
+				sendto(socketS, (char*)&answerPacket, sizeof(Packet), 0, (sockaddr*)&addrDest, sizeof(addrDest));
+			}
 			continue;
 		}
 
@@ -372,7 +376,7 @@ int runSender(std::string strFilePath, std::string strFileName) {
 	SOCKET socketS;
 	SHA256 sha256;
 	bool sha256_ok = false;
-	int counter = 0;
+	int retryCounter = 0;
 
 	InitWinsock();
 
@@ -424,32 +428,80 @@ int runSender(std::string strFilePath, std::string strFileName) {
 		file.close();
 	}
 
-	//send filename packet
-	Packet fileNamePacket;
-	fileNamePacket.type = FILESIZE;
-	fileNamePacket.seqNum = 0;
-	fileNamePacket.dataSize = strlen(FILENAME);
-	fileNamePacket.crc = CRC::Calculate(fileNamePacket.data, fileNamePacket.dataSize, CRC::CRC_32());
-	strcpy(fileNamePacket.fileName, FILENAME);
-	printf("Sending file name packet: %s\n", fileNamePacket.fileName);
-	sendto(socketS, (char*)&fileNamePacket, sizeof(Packet), 0, (sockaddr*)&addrDest, sizeof(addrDest));
 
-	//send data
-	FILE* file_in = fopen(FILEPATH, "rb");
-	Packet dataPacket;
-	Packet ansPacket;
-	dataPacket.type = DATA;
-	dataPacket.seqNum = 1;
-	int i = 0;
+	while (retryCounter < 3 && !sha256_ok)
 
-	for (char c = 0; fread(&c, 1, 1, file_in) == 1; ) {
-		if (i >= BUFFERS_LEN) {
+	{
+		//send filename packet
+		Packet fileNamePacket;
+		fileNamePacket.type = FILESIZE;
+		fileNamePacket.seqNum = 0;
+		fileNamePacket.dataSize = strlen(FILENAME);
+		fileNamePacket.crc = CRC::Calculate(fileNamePacket.data, fileNamePacket.dataSize, CRC::CRC_32());
+		strcpy(fileNamePacket.fileName, FILENAME);
+		printf("Sending file name packet: %s\n", fileNamePacket.fileName);
+		sendto(socketS, (char*)&fileNamePacket, sizeof(Packet), 0, (sockaddr*)&addrDest, sizeof(addrDest));
+
+		//send data
+		FILE* file_in = fopen(FILEPATH, "rb");
+		Packet dataPacket;
+		Packet ansPacket;
+		dataPacket.type = DATA;
+		dataPacket.seqNum = 1;
+		int i = 0;
+
+		for (char c = 0; fread(&c, 1, 1, file_in) == 1; ) {
+			if (i >= BUFFERS_LEN) {
+				dataPacket.dataSize = i;
+				dataPacket.crc = CRC::Calculate(dataPacket.data, dataPacket.dataSize, CRC::CRC_32());
+				printf("Sending data packet number %d\n", dataPacket.seqNum);
+				sendto(socketS, (char*)&dataPacket, sizeof(Packet), 0, (sockaddr*)&addrDest, sizeof(addrDest));
+
+
+
+				//wait for ACK
+				//now with timeout :3
+				bool delivered = false;
+				while (!delivered) {
+					printf("Waiting for answer\n");
+
+					fd_set readfds;
+					FD_ZERO(&readfds);
+					FD_SET(socketS, &readfds);
+
+					struct timeval timeout;
+					timeout.tv_sec = TIMEOUT_SEC;
+					timeout.tv_usec = 0;
+
+					int selectResult = select(0, &readfds, NULL, NULL, &timeout);
+					if (selectResult > 0) {
+						if (recvfrom(socketS, (char*)&ansPacket, sizeof(Packet), 0, (sockaddr*)&from, &fromlen) == SOCKET_ERROR) {
+							printf("%sSocket error!\n%s", RED, RESET);
+							return 1;
+						}
+						delivered = !isBufferAllNum(ansPacket.data, ansPacket.dataSize, 0);
+					}
+					else if (selectResult == 0) {
+						printf("%sACK timeout for packet %d, resending...\n%s", YELLOW, dataPacket.seqNum, RESET);
+						sendto(socketS, (char*)&dataPacket, sizeof(Packet), 0, (sockaddr*)&addrDest, sizeof(addrDest));
+					}
+					else {
+						printf("%sSelect error!\n%s", RED, RESET);
+						return 1;
+					}
+				}
+				i = 0;
+				dataPacket.seqNum++;
+			}
+			dataPacket.data[i++] = c;
+		}
+
+		//send remaining data if any
+		if (i != 0) {
 			dataPacket.dataSize = i;
 			dataPacket.crc = CRC::Calculate(dataPacket.data, dataPacket.dataSize, CRC::CRC_32());
-			printf("Sending data packet number %d\n", dataPacket.seqNum);
+			printf("Sending remainder data packet number %d\n", dataPacket.seqNum);
 			sendto(socketS, (char*)&dataPacket, sizeof(Packet), 0, (sockaddr*)&addrDest, sizeof(addrDest));
-
-
 
 			//wait for ACK
 			//now with timeout :3
@@ -482,24 +534,27 @@ int runSender(std::string strFilePath, std::string strFileName) {
 					return 1;
 				}
 			}
-			i = 0;
 			dataPacket.seqNum++;
 		}
-		dataPacket.data[i++] = c;
-	}
 
-	//send remaining data if any
-	if (i != 0) {
-		dataPacket.dataSize = i;
-		dataPacket.crc = CRC::Calculate(dataPacket.data, dataPacket.dataSize, CRC::CRC_32());
-		printf("Sending remainder data packet number %d\n", dataPacket.seqNum);
-		sendto(socketS, (char*)&dataPacket, sizeof(Packet), 0, (sockaddr*)&addrDest, sizeof(addrDest));
+		fclose(file_in);
 
-		//wait for ACK
-		//now with timeout :3
-		bool delivered = false;
-		while (!delivered) {
-			printf("Waiting for answer\n");
+		//send final packet
+		Packet finPacket;
+		finPacket.type = FINAL;
+		finPacket.seqNum = dataPacket.seqNum;
+		std::strcpy(finPacket.hashArray, sha256.getHash().c_str());
+		finPacket.dataSize = SHA256_LEN;
+		finPacket.crc = CRC::Calculate(finPacket.hashArray, finPacket.dataSize, CRC::CRC_32());
+		printf("%sSending finish packet number %d\n%s", YELLOW, finPacket.seqNum, RESET);
+		sendto(socketS, (char*)&finPacket, sizeof(Packet), 0, (sockaddr*)&addrDest, sizeof(addrDest));
+
+		//wait for both CRC and SHA ACK
+		bool finalCRC_OK = false;
+		bool finalSHA_OK = false;
+
+		while (!(finalCRC_OK && finalSHA_OK)) {
+			printf("Waiting for final answers\n");
 
 			fd_set readfds;
 			FD_ZERO(&readfds);
@@ -515,69 +570,27 @@ int runSender(std::string strFilePath, std::string strFileName) {
 					printf("%sSocket error!\n%s", RED, RESET);
 					return 1;
 				}
-				delivered = !isBufferAllNum(ansPacket.data, ansPacket.dataSize, 0);
+				if (ansPacket.type == ANSWER_CRC)
+					finalCRC_OK = !isBufferAllNum(ansPacket.data, ansPacket.dataSize, 0);
+				if (ansPacket.type == ANSWER_SHA) {
+					finalSHA_OK = !isBufferAllNum(ansPacket.data, ansPacket.dataSize, 0);
+					sha256_ok = finalSHA_OK;
+					(sha256_ok) ? printf("sha256 OK\n") : printf("sha256 NOK\n");
+				}
+			}
+			else if (selectResult == 0 && finalCRC_OK && !finalSHA_OK) {
+				++retryCounter;
+				break;
 			}
 			else if (selectResult == 0) {
-				printf("%sACK timeout for packet %d, resending...\n%s", YELLOW, dataPacket.seqNum, RESET);
-				sendto(socketS, (char*)&dataPacket, sizeof(Packet), 0, (sockaddr*)&addrDest, sizeof(addrDest));
+				// timeout, resend final packet
+				printf("%sACK timeout for final packet %d, resending...\n%s", YELLOW, finPacket.seqNum, RESET);
+				sendto(socketS, (char*)&finPacket, sizeof(Packet), 0, (sockaddr*)&addrDest, sizeof(addrDest));
 			}
 			else {
 				printf("%sSelect error!\n%s", RED, RESET);
 				return 1;
 			}
-		}
-		dataPacket.seqNum++;
-	}
-
-	fclose(file_in);
-
-	//send final packet
-	Packet finPacket;
-	finPacket.type = FINAL;
-	finPacket.seqNum = dataPacket.seqNum;
-	std::strcpy(finPacket.hashArray, sha256.getHash().c_str());
-	finPacket.dataSize = SHA256_LEN;
-	finPacket.crc = CRC::Calculate(finPacket.hashArray, finPacket.dataSize, CRC::CRC_32());
-	printf("%sSending finish packet number %d\n%s", YELLOW, finPacket.seqNum, RESET);
-	sendto(socketS, (char*)&finPacket, sizeof(Packet), 0, (sockaddr*)&addrDest, sizeof(addrDest));
-
-	//wait for both CRC and SHA ACK
-	bool finalCRC_OK = false;
-	bool finalSHA_OK = false;
-
-	while (!(finalCRC_OK && finalSHA_OK)) {
-		printf("Waiting for final answers\n");
-
-		fd_set readfds;
-		FD_ZERO(&readfds);
-		FD_SET(socketS, &readfds);
-
-		struct timeval timeout;
-		timeout.tv_sec = TIMEOUT_SEC;
-		timeout.tv_usec = 0;
-
-		int selectResult = select(0, &readfds, NULL, NULL, &timeout);
-		if (selectResult > 0) {
-			if (recvfrom(socketS, (char*)&ansPacket, sizeof(Packet), 0, (sockaddr*)&from, &fromlen) == SOCKET_ERROR) {
-				printf("%sSocket error!\n%s", RED, RESET);
-				return 1;
-			}
-			if (ansPacket.type == ANSWER_CRC)
-				finalCRC_OK = !isBufferAllNum(ansPacket.data, ansPacket.dataSize, 0);
-			if (ansPacket.type == ANSWER_SHA) {
-				finalSHA_OK = !isBufferAllNum(ansPacket.data, ansPacket.dataSize, 0);
-				sha256_ok = finalSHA_OK;
-				(sha256_ok) ? printf("sha256 OK\n") : printf("sha256 NOK\n");
-			}
-		}
-		else if (selectResult == 0) {
-			// timeout, resend final packet
-			printf("%sACK timeout for final packet %d, resending...\n%s", YELLOW, finPacket.seqNum, RESET);
-			sendto(socketS, (char*)&finPacket, sizeof(Packet), 0, (sockaddr*)&addrDest, sizeof(addrDest));
-		}
-		else {
-			printf("%sSelect error!\n%s", RED, RESET);
-			return 1;
 		}
 	}
 
