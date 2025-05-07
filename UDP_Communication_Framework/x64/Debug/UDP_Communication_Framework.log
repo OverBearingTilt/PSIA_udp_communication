@@ -1,1 +1,5 @@
-﻿  UDP_Communication_Framework.vcxproj -> C:\Users\vojta\Desktop\CVUT\2. sem\psia\psia_semest\x64\Debug\UDP_Communication_Framework.exe
+﻿  UDP_Communication_Framework.cpp
+C:\Users\vojta\Desktop\CVUT\2. sem\psia\psia_semest - Copy\UDP_Communication_Framework\UDP_Communication_Framework.cpp(431,34): warning C4267: =: Převod z: size_t na: int, může dojít ke ztrátě dat.
+  (kompilování zdrojového souboru /UDP_Communication_Framework.cpp)
+  
+  UDP_Communication_Framework.vcxproj -> C:\Users\vojta\Desktop\CVUT\2. sem\psia\psia_semest - Copy\x64\Debug\UDP_Communication_Framework.exe

@@ -14,6 +14,11 @@
 #include <fstream>
 #include <vector>
 #include "sha256.h"
+#include <shobjidl.h>
+#include <codecvt>
+#include <locale>
+#include <windows.h>
+#include <shlwapi.h> 
 
 #define TARGET_IP	"127.0.0.1"
 // 147.32.216.175
@@ -24,14 +29,17 @@
 #define TOLERANCE 100
 #define TIMEOUT_SEC 1
 
+#pragma comment(lib, "Comdlg32.lib")
+#pragma comment(lib, "Shlwapi.lib") //for PathFindFileName
+
 #define RED "\x1b[31m"
 #define GREEN "\x1b[32m"
 #define YELLOW "\x1b[33m"
 #define BLUE "\x1b[34m"
 #define RESET "\x1b[0m"
 
-//#define SENDER
-#define RECEIVER
+#define SENDER
+//#define RECEIVER
 
 #ifdef SENDER
 #define TARGET_PORT 5001
@@ -69,6 +77,43 @@ void InitWinsock()
 	WSADATA wsaData;
 	WSAStartup(MAKEWORD(2, 2), &wsaData);
 }
+
+//convert wide string to UTF-8 string
+std::string WideToUtf8(const std::wstring& wideStr) {
+	if (wideStr.empty()) return {};
+
+	int size_needed = WideCharToMultiByte(CP_UTF8, 0, wideStr.c_str(), -1, nullptr, 0, nullptr, nullptr);
+	if (size_needed <= 0) return {};
+
+	std::string utf8Str(size_needed - 1, 0); // exclude null terminator
+	WideCharToMultiByte(CP_UTF8, 0, wideStr.c_str(), -1, &utf8Str[0], size_needed, nullptr, nullptr);
+	return utf8Str;
+}
+
+//file selection function
+bool OpenFileDialog(std::string& filePath, std::string& fileName) {
+	wchar_t filePathW[MAX_PATH] = L"";
+
+	OPENFILENAMEW ofn = {};
+	ofn.lStructSize = sizeof(ofn);
+	ofn.lpstrFilter = L"All Files\0*.*\0";
+	ofn.lpstrFile = filePathW;
+	ofn.nMaxFile = MAX_PATH;
+	ofn.Flags = OFN_FILEMUSTEXIST | OFN_PATHMUSTEXIST;
+
+	if (GetOpenFileNameW(&ofn)) {
+		std::wstring widePath(filePathW);
+		filePath = WideToUtf8(widePath);
+
+		wchar_t* fileNameW = PathFindFileNameW(filePathW);
+		fileName = WideToUtf8(fileNameW);
+		return true;
+	}
+	else {
+		return false;
+	}
+}
+
 
 void reset_data(char data[BUFFERS_LEN]) {
 	for (int i = 0; i < BUFFERS_LEN; i++) {
@@ -110,6 +155,7 @@ int runReceiver() {
 	SOCKET socketS;
 	SHA256 sha256;
 	bool sha256_ok = false;
+	bool crc_fail = false;
 	int retryCounter = 0;
 	int lastSeqNum = -1; //track last processed packet seqNum
 
@@ -147,36 +193,97 @@ int runReceiver() {
 		}
 
 		if (packet.seqNum == lastSeqNum) {
-			printf("%sDuplicate packet %d received, resending ACK\n%s", YELLOW, packet.seqNum, RESET);
+			printf("%sDuplicate packet %d received, resending ACK%s - ", YELLOW, packet.seqNum, RESET);
 
 			Packet answerPacket;
 			answerPacket.type = ANSWER_CRC;
 			answerPacket.seqNum = packet.seqNum;
 			answerPacket.dataSize = packet.dataSize;
-			setBufferToNum(answerPacket.data, answerPacket.dataSize, 1); // assume ACK ok for duplicate
-			sendto(socketS, (char*)&answerPacket, sizeof(Packet), 0, (sockaddr*)&addrDest, sizeof(addrDest));
 
+			if (crc_fail) {
+				if (packet.type == DATA) {
+					printf("Packet type: %sDATA%s\n", BLUE, RESET);
+
+					std::uint32_t crc = CRC::Calculate(packet.data, packet.dataSize, CRC::CRC_32());
+					char ackResult = (crc == packet.crc) ? 1 : 0;
+
+					if (ackResult) fwrite(packet.data, packet.dataSize, 1, file_out);
+					else crc_fail = true;
+
+					setBufferToNum(answerPacket.data, answerPacket.dataSize, ackResult);
+					printf("%sSending ACK packet: %d for seqNum: %d\n%s", (ackResult) ? GREEN : RED, ackResult, packet.seqNum, RESET);
+					sendto(socketS, (char*)&answerPacket, sizeof(Packet), 0, (sockaddr*)&addrDest, sizeof(addrDest));
+				}
+
+				if (packet.type == FINAL) {
+					printf("Packet type: %sFINAL%s\n", BLUE, RESET);
+					Packet answerPacket;
+					answerPacket.dataSize = BUFFERS_LEN;
+
+					received_sha256 = packet.hashArray;
+					std::uint32_t crc = CRC::Calculate(packet.hashArray, packet.dataSize, CRC::CRC_32());
+					char ackResult = (crc == packet.crc) ? 1 : 0;
+
+					setBufferToNum(answerPacket.data, answerPacket.dataSize, ackResult);
+					printf("%sSending final CRC ACK: %d\n%s", (ackResult) ? GREEN : RED, ackResult, RESET);
+					sendto(socketS, (char*)&answerPacket, sizeof(Packet), 0, (sockaddr*)&addrDest, sizeof(addrDest));
+
+					if (ackResult) {
+						fclose(file_out);
+						crc_fail = false;
+
+						//xalculate sha256
+						std::ifstream file(fileName, std::ios::binary);
+						const std::size_t bufferSize = 4096;
+						std::vector<char> buffer(bufferSize);
+
+						while (file) {
+							file.read(buffer.data(), buffer.size());
+							std::streamsize bytesRead = file.gcount();
+							if (bytesRead > 0) sha256.add(buffer.data(), bytesRead);
+						}
+						file.close();
+
+						sha256_ok = (strcmp(sha256.getHash().c_str(), received_sha256) == 0);
+						printf("%sSHA256 %s\n%s", sha256_ok ? GREEN : RED, sha256_ok ? "OK" : "NOK", RESET);
+
+						//send SHA result
+						answerPacket.type = ANSWER_SHA;
+						answerPacket.seqNum = packet.seqNum + 1;
+						setBufferToNum(answerPacket.data, answerPacket.dataSize, sha256_ok);
+						printf("%sSending SHA result ACK: %d\n%s", (sha256_ok) ? GREEN : RED, sha256_ok, RESET);
+						sendto(socketS, (char*)&answerPacket, sizeof(Packet), 0, (sockaddr*)&addrDest, sizeof(addrDest));
+
+						retryCounter += (sha256_ok ? 0 : 1);
+					}
+
+					free(fileName);
+					fileName = nullptr;
+				}
+			}
 			continue;
 		}
 
 		lastSeqNum = packet.seqNum;
 
 		if (packet.type == FILESIZE) {
-			//allocate file name
-			fileName = (char*)malloc(packet.dataSize + 1);
-			if (!fileName) {
-				printf("%sMalloc failed!\n%s", RED, RESET);
-				return 100;
-			}
-			memcpy(fileName, packet.fileName, packet.dataSize);
-			fileName[packet.dataSize] = '\0';
-			printf("%sReceiving file: %s\n%s", YELLOW, fileName, RESET);
+			if (packet.crc == CRC::Calculate(packet.data, packet.dataSize, CRC::CRC_32())) {
+				//allocate file name
+				fileName = (char*)malloc(packet.dataSize + 1);
+				if (!fileName) {
+					printf("%sMalloc failed!\n%s", RED, RESET);
+					return 100;
+				}
+				memcpy(fileName, packet.fileName, packet.dataSize);
+				fileName[packet.dataSize] = '\0';
+				printf("%sReceiving file: %s\n%s", YELLOW, fileName, RESET);
 
-			file_out = fopen(fileName, "wb");
-			if (!file_out) {
-				printf("%sFailed to open file for writing!\n%s", RED, RESET);
-				free(fileName);
-				return 1;
+				file_out = fopen(fileName, "wb");
+				if (!file_out) {
+					printf("%sFailed to open file for writing!\n%s", RED, RESET);
+					free(fileName);
+					return 1;
+				}
 			}
 		}
 
@@ -191,6 +298,7 @@ int runReceiver() {
 			char ackResult = (crc == packet.crc) ? 1 : 0;
 
 			if (ackResult) fwrite(packet.data, packet.dataSize, 1, file_out);
+			else crc_fail = true;
 
 			setBufferToNum(answerPacket.data, answerPacket.dataSize, ackResult);
 			printf("%sSending ACK packet: %d for seqNum: %d\n%s", (ackResult) ? GREEN : RED, ackResult, packet.seqNum, RESET);
@@ -240,7 +348,7 @@ int runReceiver() {
 				retryCounter += (sha256_ok ? 0 : 1);
 			}
 			else {
-				retryCounter++;
+				crc_fail = true;
 			}
 
 			free(fileName);
@@ -260,7 +368,7 @@ int runReceiver() {
 //----------------------------------------------------------------------------------------------------------
 //---------------------------------------------runSender----------------------------------------------------
 //----------------------------------------------------------------------------------------------------------
-int runSender() {
+int runSender(std::string strFilePath, std::string strFileName) {
 	SOCKET socketS;
 	SHA256 sha256;
 	bool sha256_ok = false;
@@ -286,18 +394,23 @@ int runSender() {
 	addrDest.sin_port = htons(TARGET_PORT);
 	InetPton(AF_INET, _T(TARGET_IP), &addrDest.sin_addr.s_addr);
 
-	std::string strFilePath;
-	std::cout << "Enter the path to the file: ";
-	std::getline(std::cin, strFilePath);
 
-	stripQuotes(strFilePath);
 
-	std::filesystem::path pathObj(strFilePath);
-	std::string strFileName = pathObj.filename().string();
 
-	const char* FILENAME = strFileName.c_str();
+
+	//std::string strFilePath;
+	//std::cout << "Enter the path to the file: ";
+	//std::getline(std::cin, strFilePath);
+
+	//stripQuotes(strFilePath);
+
+	//std::filesystem::path pathObj(strFilePath);
+	//std::string strFileName = pathObj.filename().string();
+
 	const char* FILEPATH = strFilePath.c_str();
+	const char* FILENAME = strFileName.c_str();
 
+	
 	//sha256 calculation
 	{
 		std::ifstream file(FILEPATH, std::ios::binary);
@@ -490,7 +603,22 @@ int main(int argc, char* argv[])
 
 
 #ifdef SENDER
-	retValue = runSender();
+	CoInitialize(NULL);
+	std::string strFilePath;
+	std::string strFileName;
+
+	if (OpenFileDialog(strFilePath, strFileName)) {
+		std::cout << "Full path: " << strFilePath << std::endl;
+		std::cout << "File name: " << strFileName << std::endl;
+	}
+	else {
+		std::cout << "File selection cancelled or failed." << std::endl;
+		exit(-1);
+	}
+
+	CoUninitialize();
+
+	retValue = runSender(strFilePath, strFileName);
 #endif // SENDER
 
 #ifdef RECEIVER
