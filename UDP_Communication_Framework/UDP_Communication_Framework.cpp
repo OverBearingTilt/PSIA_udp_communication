@@ -7,7 +7,7 @@
 #include "Sender.h"
 #include "utils.h"
 
-#define TARGET_IP "192.168.0.101"
+#define TARGET_IP "192.168.0.107"
 // 147.32.216.175
 
 #define BUFFERS_LEN 1024 - sizeof(uint32_t) - 2*sizeof(int) - sizeof(char)
@@ -25,8 +25,8 @@
 #define BLUE "\x1b[34m"
 #define RESET "\x1b[0m"
 
-#define SENDER
-//#define RECEIVER
+//#define SENDER
+#define RECEIVER
 
 #ifdef SENDER
 #define TARGET_PORT 5001
