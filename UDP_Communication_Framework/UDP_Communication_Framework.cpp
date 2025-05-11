@@ -8,7 +8,6 @@
 #include "utils.h"
 
 #define TARGET_IP "192.168.0.107"
-// 147.32.216.175
 
 #define BUFFERS_LEN 1024 - sizeof(uint32_t) - 2*sizeof(int) - sizeof(char)
 #define NAME_LEN 64
@@ -30,7 +29,9 @@
 
 #define PORT_A 5000
 #define PORT_B 5001
-
+// sender with netderper:
+// local/A = 5002
+// target/B = 5004
 
 int main(int argc, char* argv[])
 {

@@ -108,9 +108,9 @@ bool Sender::sendDataPackets(const std::string& filePath) {
             std::cout << "Sending data packet number " << dataPacket.seqNum << std::endl;
             sendto(socketS, (char*)&dataPacket, sizeof(Packet), 0, (sockaddr*)&addrDest, sizeof(addrDest));
 
-            if (!waitForACK(ANSWER_CRC, dataPacket.seqNum)) {
-                fclose(file_in);
-                return false;
+            while (!waitForACK(ANSWER_CRC, dataPacket.seqNum)) {
+                std::cout << "Sending data packet number " << dataPacket.seqNum << std::endl;
+                sendto(socketS, (char*)&dataPacket, sizeof(Packet), 0, (sockaddr*)&addrDest, sizeof(addrDest));
             }
 
             i = 0;
