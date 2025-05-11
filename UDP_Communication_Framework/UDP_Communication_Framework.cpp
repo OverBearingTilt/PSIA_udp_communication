@@ -28,15 +28,8 @@
 //#define SENDER
 #define RECEIVER
 
-#ifdef SENDER
-#define TARGET_PORT 5001
-#define LOCAL_PORT 5000
-#endif // SENDER
-
-#ifdef RECEIVER
-#define TARGET_PORT 5000
-#define LOCAL_PORT 5001
-#endif // RECEIVER
+#define PORT_A 5000
+#define PORT_B 5001
 
 
 int main(int argc, char* argv[])
@@ -47,8 +40,8 @@ int main(int argc, char* argv[])
 #ifdef SENDER
 	try {
 		// Define the local and target ports and the target IP address
-		int localPort = 5000;  // Port to send from
-		int targetPort = 5001; // Port to send to
+		int localPort = PORT_A;  // Port to send from
+		int targetPort = PORT_B; // Port to send to
 		wchar_t targetIP[] = _T(TARGET_IP); // Target IP address
 
 		// File path and name
@@ -90,8 +83,8 @@ int main(int argc, char* argv[])
 #ifdef RECEIVER
 	try {
 		// Define the local and target ports and the target IP address
-		int localPort = 5001;  // Port to listen on
-		int targetPort = 5000; // Port to send responses to
+		int localPort = PORT_B;  // Port to listen on
+		int targetPort = PORT_A; // Port to send responses to
 		wchar_t targetIP[] = _T(TARGET_IP); // Target IP address
 
 		// Create a Receiver object
