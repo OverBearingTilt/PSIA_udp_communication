@@ -32,14 +32,11 @@ private:
     bool sendFinalPacket(const std::string& hash);
     bool waitForACK(int packetType, int seqNum);
 
-    // Helper methods
-    void resetDataBuffer(char* buffer, size_t size);
-    bool isBufferAllNum(const char* buffer, int size, char setTo);
-
     // Socket-related members
     SOCKET socketS;
     sockaddr_in addrDest;
     sockaddr_in local;
+    int seqNum;
 };
 
 #endif // SENDER_H

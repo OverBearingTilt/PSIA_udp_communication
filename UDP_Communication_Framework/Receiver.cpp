@@ -99,38 +99,35 @@ void Receiver::handleDuplicatePacket(const Packet& packet) {
 
 // Function to handle FILESIZE packets
 void Receiver::handleFileSizePacket(const Packet& packet) {
-    if (packet.crc == CRC::Calculate(packet.data, packet.dataSize, CRC::CRC_32())) {
-        Packet answerPacket;
-        answerPacket.type = ANSWER_CRC;
-        answerPacket.seqNum = packet.seqNum;
-        answerPacket.dataSize = packet.dataSize;
+    Packet answerPacket;
+    answerPacket.type = ANSWER_CRC;
+    answerPacket.seqNum = packet.seqNum;
+    answerPacket.dataSize = sizeof(answerPacket.data);
 
-        std::uint32_t crc = CRC::Calculate(packet.data, packet.dataSize, CRC::CRC_32());
-        char ackResult = (crc == packet.crc) ? 1 : 0;
+    std::uint32_t crc = CRC::Calculate(packet.fileName, packet.dataSize, CRC::CRC_32());
+    char ackResult = (crc == packet.crc) ? 1 : 0;
 
-        setBufferToNum(answerPacket.data, answerPacket.dataSize, ackResult);
-        printf("%sSending ACK packet: %d for seqNum: %d\n%s", (ackResult) ? GREEN : RED, ackResult, packet.seqNum, RESET);
-        sendto(socketS, (char*)&answerPacket, sizeof(Packet), 0, (sockaddr*)&addrDest, sizeof(addrDest));
+    setBufferToNum(answerPacket.data, sizeof(answerPacket.data), ackResult);
+    printf("%sSending ACK packet: %d for seqNum: %d\n%s", (ackResult) ? GREEN : RED, ackResult, packet.seqNum, RESET);
+    sendto(socketS, (char*)&answerPacket, sizeof(Packet), 0, (sockaddr*)&addrDest, sizeof(addrDest));
 
-        if (ackResult) {
-            // Allocate file name
-            fileName = (char*)malloc(packet.dataSize + 1);
-            if (!fileName) {
-                printf("%sMalloc failed!\n%s", RED, RESET);
-                throw std::runtime_error("Memory allocation failed for file name");
-            }
-            memcpy(fileName, packet.fileName, packet.dataSize);
-            fileName[packet.dataSize] = '\0';
-            printf("%sReceiving file: %s\n%s", YELLOW, fileName, RESET);
-
-            file_out = fopen(fileName, "wb");
-            if (!file_out) {
-                printf("%sFailed to open file for writing!\n%s", RED, RESET);
-                free(fileName);
-                throw std::runtime_error("Failed to open file for writing");
-            }
+    if (ackResult) {
+        // Allocate file name
+        fileName = (char*)malloc(packet.dataSize + 1);
+        if (!fileName) {
+            printf("%sMalloc failed!\n%s", RED, RESET);
+            throw std::runtime_error("Memory allocation failed for file name");
         }
-        
+        memcpy(fileName, packet.fileName, packet.dataSize);
+        fileName[packet.dataSize] = '\0';
+        printf("%sReceiving file: %s\n%s", YELLOW, fileName, RESET);
+
+        file_out = fopen(fileName, "wb");
+        if (!file_out) {
+            printf("%sFailed to open file for writing!\n%s", RED, RESET);
+            free(fileName);
+            throw std::runtime_error("Failed to open file for writing");
+        }
     }
 }
 

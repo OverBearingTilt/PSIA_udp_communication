@@ -45,7 +45,7 @@ int Sender::run(const std::string& filePath, const std::string& fileName) {
         if (!sendDataPackets(filePath)) {
             return 1;
         }
-
+        std::cout << "Data sent, now sending final packet" << std::endl;
         if (!sendFinalPacket(sha256Hash)) {
             return 1;
         }
@@ -96,38 +96,41 @@ bool Sender::sendDataPackets(const std::string& filePath) {
         return false;
     }
 
+    seqNum = 1;
     Packet dataPacket;
     dataPacket.type = DATA;
-    dataPacket.seqNum = 1;
+    dataPacket.seqNum = seqNum;
     int i = 0;
 
     for (char c = 0; fread(&c, 1, 1, file_in) == 1; ) {
         if (i >= BUFFERS_LEN) {
             dataPacket.dataSize = i;
+            dataPacket.seqNum = seqNum;
             dataPacket.crc = CRC::Calculate(dataPacket.data, dataPacket.dataSize, CRC::CRC_32());
             std::cout << "Sending data packet number " << dataPacket.seqNum << std::endl;
             sendto(socketS, (char*)&dataPacket, sizeof(Packet), 0, (sockaddr*)&addrDest, sizeof(addrDest));
 
             while (!waitForACK(ANSWER_CRC, dataPacket.seqNum)) {
-                std::cout << "Sending data packet number " << dataPacket.seqNum << std::endl;
+                std::cout << "Resending data packet number " << dataPacket.seqNum << std::endl;
                 sendto(socketS, (char*)&dataPacket, sizeof(Packet), 0, (sockaddr*)&addrDest, sizeof(addrDest));
             }
 
             i = 0;
-            dataPacket.seqNum++;
+            seqNum++;
         }
         dataPacket.data[i++] = c;
     }
 
     if (i != 0) {
         dataPacket.dataSize = i;
+        dataPacket.seqNum = seqNum;
         dataPacket.crc = CRC::Calculate(dataPacket.data, dataPacket.dataSize, CRC::CRC_32());
         std::cout << "Sending remainder data packet number " << dataPacket.seqNum << std::endl;
         sendto(socketS, (char*)&dataPacket, sizeof(Packet), 0, (sockaddr*)&addrDest, sizeof(addrDest));
 
-        if (!waitForACK(ANSWER_CRC, dataPacket.seqNum)) {
-            fclose(file_in);
-            return false;
+        while (!waitForACK(ANSWER_CRC, dataPacket.seqNum)) {
+            std::cout << "Resending remainder data packet number " << dataPacket.seqNum << std::endl;
+            sendto(socketS, (char*)&dataPacket, sizeof(Packet), 0, (sockaddr*)&addrDest, sizeof(addrDest));
         }
     }
 
@@ -138,7 +141,7 @@ bool Sender::sendDataPackets(const std::string& filePath) {
 bool Sender::sendFinalPacket(const std::string& hash) {
     Packet finPacket;
     finPacket.type = FINAL;
-    finPacket.seqNum = 0;
+    finPacket.seqNum = ++seqNum;
     std::strcpy(finPacket.hashArray, hash.c_str());
     finPacket.dataSize = SHA256_LEN;
     finPacket.crc = CRC::Calculate(finPacket.hashArray, finPacket.dataSize, CRC::CRC_32());
@@ -161,14 +164,21 @@ bool Sender::waitForACK(int packetType, int seqNum) {
     struct timeval timeout;
     timeout.tv_sec = TIMEOUT_SEC;
     timeout.tv_usec = 0;
+    bool delivered = false;
 
     int selectResult = select(0, &readfds, NULL, NULL, &timeout);
     if (selectResult > 0) {
+        std::cerr << "Waiting for ACK" << std::endl;
         if (recvfrom(socketS, (char*)&ansPacket, sizeof(Packet), 0, (sockaddr*)&from, &fromlen) == SOCKET_ERROR) {
             std::cerr << "Socket error while waiting for ACK" << std::endl;
             return false;
         }
-        return ansPacket.type == packetType && ansPacket.seqNum == seqNum;
+        delivered = !isBufferAllNum(ansPacket.data, ansPacket.dataSize, 0);
+        if (!delivered) {
+            std::cerr << RED << "ACK came in negative"<< RESET << std::endl;
+        }
+		std::cout << "Delivery state: " << delivered << std::endl;
+        return delivered;
     }
     else if (selectResult == 0) {
         std::cerr << "ACK timeout for packet " << seqNum << std::endl;

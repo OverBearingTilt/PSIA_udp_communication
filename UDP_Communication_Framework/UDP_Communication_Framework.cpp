@@ -7,7 +7,7 @@
 #include "Sender.h"
 #include "utils.h"
 
-#define TARGET_IP "192.168.0.107"
+#define TARGET_IP "127.0.0.1"
 
 #define BUFFERS_LEN 1024 - sizeof(uint32_t) - 2*sizeof(int) - sizeof(char)
 #define NAME_LEN 64
@@ -24,14 +24,14 @@
 #define BLUE "\x1b[34m"
 #define RESET "\x1b[0m"
 
-//#define SENDER
-#define RECEIVER
+ #define SENDER
+//#define RECEIVER
 
 #define PORT_A 5000
 #define PORT_B 5001
 // sender with netderper:
-// local/A = 5002
-// target/B = 5004
+// local/A = 5004
+// target/B = 5002
 
 int main(int argc, char* argv[])
 {
@@ -67,10 +67,10 @@ int main(int argc, char* argv[])
 
 		// Check the result of the transfer
 		if (result == 0) {
-			std::cout << "File transfer completed successfully." << std::endl;
+			std::cout << GREEN << "File transfer completed successfully."<< RESET << std::endl;
 		}
 		else {
-			std::cerr << "File transfer failed." << std::endl;
+			std::cerr<< RED << "File transfer failed." << RESET << std::endl;
 		}
 
 		return result;
