@@ -37,20 +37,32 @@ int Sender::run(const std::string& filePath, const std::string& fileName) {
     try {
         std::string sha256Hash;
         calculateSHA256(filePath, sha256Hash);
+        char try_counter = 0;
+        bool sha_ok = false;
+        int ret_val = 1;
 
-        if (!sendFileNamePacket(fileName)) {
-            return 1;
+        while (try_counter <3 && !sha_ok) {
+            bool end_while = false;
+            while (!end_while) {
+                end_while = sendFileNamePacket(fileName);
+            }
+
+            end_while = false;
+            if (!end_while) {
+                end_while = sendDataPackets(filePath);
+            }
+            std::cout << "Data sent, now sending final packet :33" << std::endl;
+            if (!sendFinalPacket(sha256Hash)) {
+                ++try_counter;
+                continue;
+            }
+            else {
+                sha_ok = true;
+            }
         }
 
-        if (!sendDataPackets(filePath)) {
-            return 1;
-        }
-        std::cout << "Data sent, now sending final packet" << std::endl;
-        if (!sendFinalPacket(sha256Hash)) {
-            return 1;
-        }
-
-        return 0;
+        ret_val = sha_ok ? 0 : 1;
+        return ret_val;
     }
     catch (const std::exception& e) {
         std::cerr << "Error: " << e.what() << std::endl;
