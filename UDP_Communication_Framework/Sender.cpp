@@ -51,7 +51,7 @@ int Sender::run(const std::string& filePath, const std::string& fileName) {
             if (!end_while) {
                 end_while = sendDataPackets(filePath);
             }
-            std::cout << "Data sent, now sending final packet :33" << std::endl;
+
             if (!sendFinalPacket(sha256Hash)) {
                 ++try_counter;
                 continue;

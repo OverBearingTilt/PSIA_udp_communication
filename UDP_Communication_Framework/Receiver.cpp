@@ -145,6 +145,7 @@ void Receiver::handleDataPacket(const Packet& packet) {
 
     if (ackResult) {
         fwrite(packet.data, packet.dataSize, 1, file_out);
+        crc_fail = false;
     }
     else {
         crc_fail = true;
