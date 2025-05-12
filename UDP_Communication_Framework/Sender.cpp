@@ -1,6 +1,7 @@
 #include "stdafx.h"
 #include "Sender.h"
 
+
 #pragma comment(lib, "ws2_32.lib")
 
 
@@ -31,6 +32,31 @@ Sender::Sender(int local_port, int target_port, wchar_t* target_IP) {
 Sender::~Sender() {
     closesocket(socketS);
     WSACleanup();
+}
+
+void Sender::waitForAcksThread() {
+    while (true) {
+        Packet ackPacket;
+        sockaddr_in from;
+        int fromLen = sizeof(from);
+
+        if (recvfrom(socketS, (char*)&ackPacket, sizeof(Packet), 0, (sockaddr*)&from, &fromLen) > 0) {
+            if (ackPacket.type == ANSWER_CRC) {
+                std::unique_lock<std::mutex> lock(ack_mutex);
+                int seq = ackPacket.seqNum;
+                ackReceived[seq % WINDOW_SIZE] = true;
+                buffer[seq % WINDOW_SIZE].acknowledged = true;
+                ack_cv.notify_all();
+                std::cout << "ACK received for packet: " << seq << std::endl;
+
+                // Slide the window
+                while (ackReceived[base % WINDOW_SIZE]) {
+                    ackReceived[base % WINDOW_SIZE] = false;
+                    base++;
+                }
+            }
+        }
+    }
 }
 
 int Sender::run(const std::string& filePath, const std::string& fileName) {
@@ -113,41 +139,92 @@ bool Sender::sendDataPackets(const std::string& filePath) {
     dataPacket.type = DATA;
     dataPacket.seqNum = seqNum;
     int i = 0;
+    bool sendingDone = false;
+    std::thread ackThread(&Sender::waitForAcksThread, this);
 
-    for (char c = 0; fread(&c, 1, 1, file_in) == 1; ) {
+    std::thread resendThread([&]() {
+        while (!sendingDone) {
+            std::unique_lock<std::mutex> lock(ack_mutex);
+            auto now = std::chrono::steady_clock::now();
+            for (int j = base; j < nextSeqNum; ++j) {
+                int idx = j % WINDOW_SIZE;
+                if (!buffer[idx].acknowledged &&
+                    std::chrono::duration_cast<std::chrono::milliseconds>(now - buffer[idx].lastSent).count() > TIMEOUT_MS) {
+                    std::cout << "Resending packet " << buffer[idx].packet.seqNum << " due to timeout" << std::endl;
+                    buffer[idx].lastSent = now;
+                    sendto(socketS, (char*)&buffer[idx].packet, sizeof(Packet), 0, (sockaddr*)&addrDest, sizeof(addrDest));
+                }
+            }
+            lock.unlock();
+            std::this_thread::sleep_for(std::chrono::milliseconds(50));
+        }
+    });
+
+
+    while (true) {
+        char c;
+        if (fread(&c, 1, 1, file_in) != 1) break;
+
+        dataPacket.data[i++] = c;
+
         if (i >= BUFFERS_LEN) {
-            dataPacket.dataSize = i;
-            dataPacket.seqNum = seqNum;
-            dataPacket.crc = CRC::Calculate(dataPacket.data, dataPacket.dataSize, CRC::CRC_32());
-            std::cout << "Sending data packet number " << dataPacket.seqNum << std::endl;
-            sendto(socketS, (char*)&dataPacket, sizeof(Packet), 0, (sockaddr*)&addrDest, sizeof(addrDest));
+            std::unique_lock<std::mutex> lock(ack_mutex);
 
-            while (!waitForACK(ANSWER_CRC, dataPacket.seqNum)) {
-                std::cout << "Resending data packet number " << dataPacket.seqNum << std::endl;
-                sendto(socketS, (char*)&dataPacket, sizeof(Packet), 0, (sockaddr*)&addrDest, sizeof(addrDest));
+            while (nextSeqNum >= base + WINDOW_SIZE) {
+                ack_cv.wait(lock);  // Wait for space in the window
             }
 
-            i = 0;
-            seqNum++;
-        }
-        dataPacket.data[i++] = c;
-    }
+            dataPacket.seqNum = seqNum++;
+            dataPacket.dataSize = i;
+            dataPacket.crc = CRC::Calculate(dataPacket.data, dataPacket.dataSize, CRC::CRC_32());
 
-    if (i != 0) {
-        dataPacket.dataSize = i;
-        dataPacket.seqNum = seqNum;
-        dataPacket.crc = CRC::Calculate(dataPacket.data, dataPacket.dataSize, CRC::CRC_32());
-        std::cout << "Sending remainder data packet number " << dataPacket.seqNum << std::endl;
-        sendto(socketS, (char*)&dataPacket, sizeof(Packet), 0, (sockaddr*)&addrDest, sizeof(addrDest));
+            int idx = dataPacket.seqNum % WINDOW_SIZE;
+            buffer[idx].packet = dataPacket;
+            buffer[idx].acknowledged = false;
+            buffer[idx].lastSent = std::chrono::steady_clock::now();
 
-        while (!waitForACK(ANSWER_CRC, dataPacket.seqNum)) {
-            std::cout << "Resending remainder data packet number " << dataPacket.seqNum << std::endl;
+            std::cout << "Sending data packet number " << dataPacket.seqNum << std::endl;
             sendto(socketS, (char*)&dataPacket, sizeof(Packet), 0, (sockaddr*)&addrDest, sizeof(addrDest));
+            nextSeqNum++;
+
+            i = 0;
         }
     }
+
+
+    // Final partial packet if remaining
+    if (i != 0) {
+        std::unique_lock<std::mutex> lock(ack_mutex);
+        while (nextSeqNum >= base + WINDOW_SIZE) {
+            ack_cv.wait(lock);
+        }
+
+        dataPacket.seqNum = seqNum++;
+        dataPacket.dataSize = i;
+        dataPacket.crc = CRC::Calculate(dataPacket.data, dataPacket.dataSize, CRC::CRC_32());
+
+        int idx = dataPacket.seqNum % WINDOW_SIZE;
+        buffer[idx].packet = dataPacket;
+        buffer[idx].acknowledged = false;
+        buffer[idx].lastSent = std::chrono::steady_clock::now();
+
+        std::cout << "Sending final partial packet " << dataPacket.seqNum << std::endl;
+        sendto(socketS, (char*)&dataPacket, sizeof(Packet), 0, (sockaddr*)&addrDest, sizeof(addrDest));
+        nextSeqNum++;
+    }
+
+    // Wait until all packets are acknowledged
+    /*while (base < nextSeqNum) {
+        std::this_thread::sleep_for(std::chrono::milliseconds(50));
+    }*/
+
+    sendingDone = true;
+    ackThread.detach();   // You may safely detach or use join if you add a break mechanism
+    resendThread.join();
 
     fclose(file_in);
     return true;
+
 }
 
 bool Sender::sendFinalPacket(const std::string& hash) {
@@ -174,8 +251,8 @@ bool Sender::waitForACK(int packetType, int seqNum) {
     FD_SET(socketS, &readfds);
 
     struct timeval timeout;
-    timeout.tv_sec = TIMEOUT_SEC;
-    timeout.tv_usec = 0;
+    timeout.tv_sec = 0;
+    timeout.tv_usec = TIMEOUT_MS*1000;
     bool delivered = false;
 
     int selectResult = select(0, &readfds, NULL, NULL, &timeout);

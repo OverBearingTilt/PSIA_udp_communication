@@ -12,10 +12,26 @@
 #include <cstring>
 #include "utils.h"
 
+#include <thread>
+#include <mutex>
+#include <condition_variable>
+#include <vector>
+#include <chrono>
+#include <atomic>
+#include <unordered_set>
+
 
 #define BUFFERS_LEN 1024 - sizeof(uint32_t) - 2 * sizeof(int) - sizeof(char)
 #define SHA256_LEN 64
-#define TIMEOUT_SEC 1
+#define TIMEOUT_MS 500
+#define WINDOW_SIZE 20
+
+struct PacketEntry {
+    Packet packet;
+    bool acknowledged = false;
+    std::chrono::steady_clock::time_point lastSent;
+};
+
 
 class Sender {
 public:
@@ -31,12 +47,21 @@ private:
     bool sendDataPackets(const std::string& filePath);
     bool sendFinalPacket(const std::string& hash);
     bool waitForACK(int packetType, int seqNum);
+    void waitForAcksThread();
 
     // Socket-related members
     SOCKET socketS;
     sockaddr_in addrDest;
     sockaddr_in local;
     int seqNum;
+    std::mutex ack_mutex;
+    std::condition_variable ack_cv;
+    PacketEntry buffer[WINDOW_SIZE];
+    std::atomic<int> base;         // Oldest unacknowledged packet
+    std::atomic<int> nextSeqNum;   // Next packet to send
+    bool ackReceived[WINDOW_SIZE] = { false };
+    std::unordered_set<int> earlyAcks;
+    std::mutex earlyAckMutex;
 };
 
 #endif // SENDER_H
