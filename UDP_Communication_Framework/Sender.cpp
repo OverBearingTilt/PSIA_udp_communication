@@ -27,6 +27,8 @@ Sender::Sender(int local_port, int target_port, wchar_t* target_IP) {
     addrDest.sin_family = AF_INET;
     addrDest.sin_port = htons(target_port);
     InetPton(AF_INET, target_IP, &addrDest.sin_addr.s_addr);
+    // originaly _T(target_IP) which worked only on literals
+
 }
 
 Sender::~Sender() {
@@ -39,6 +41,13 @@ void Sender::waitForAcksThread() {
         Packet ackPacket;
         sockaddr_in from;
         int fromLen = sizeof(from);
+
+		for (int i = 0; i < WINDOW_SIZE; ++i) {
+			if (buffer[i].packet.type == FILESIZE) {
+				buffer[i].acknowledged = true;
+				ackReceived[i] = true;
+			}
+		}
 
         if (recvfrom(socketS, (char*)&ackPacket, sizeof(Packet), 0, (sockaddr*)&from, &fromLen) > 0) {
             if (ackPacket.type == ANSWER_CRC) {
@@ -67,11 +76,11 @@ int Sender::run(const std::string& filePath, const std::string& fileName) {
         bool sha_ok = false;
         int ret_val = 1;
 
-        while (try_counter <3 && !sha_ok) {
+        //while (try_counter <3 && !sha_ok) {
             bool end_while = false;
-            while (!end_while) {
+            //while (!end_while) {
                 end_while = sendFileNamePacket(fileName);
-            }
+            //}
 
             end_while = false;
             if (!end_while) {
@@ -80,14 +89,15 @@ int Sender::run(const std::string& filePath, const std::string& fileName) {
 
             if (!sendFinalPacket(sha256Hash)) {
                 ++try_counter;
-                continue;
+                sha_ok = true;
+                //continue;
             }
             else {
-                sha_ok = true;
+                sha_ok = false;
             }
-        }
+        //}
 
-        ret_val = sha_ok ? 0 : 1;
+        ret_val = !sha_ok;
         return ret_val;
     }
     catch (const std::exception& e) {
@@ -140,25 +150,30 @@ bool Sender::sendDataPackets(const std::string& filePath) {
     dataPacket.seqNum = seqNum;
     int i = 0;
     bool sendingDone = false;
+
+    //std::this_thread::sleep_for(std::chrono::milliseconds(200));
     std::thread ackThread(&Sender::waitForAcksThread, this);
 
+    std::atomic<bool> sendingDoneFlag{ false }; // Use atomic for thread-safe signaling
     std::thread resendThread([&]() {
-        while (!sendingDone) {
+        while (!sendingDoneFlag.load()) {
             std::unique_lock<std::mutex> lock(ack_mutex);
+            int baseSnapshot = base.load();
+            int nextSeqNumSnapshot = nextSeqNum.load();
             auto now = std::chrono::steady_clock::now();
-            for (int j = base; j < nextSeqNum; ++j) {
+            for (int j = baseSnapshot; j < nextSeqNumSnapshot; ++j) {
                 int idx = j % WINDOW_SIZE;
-                if (!buffer[idx].acknowledged &&
+                if (buffer[idx].packet.type == DATA &&
+                    !buffer[idx].acknowledged &&
                     std::chrono::duration_cast<std::chrono::milliseconds>(now - buffer[idx].lastSent).count() > TIMEOUT_MS) {
-                    std::cout << "Resending packet " << buffer[idx].packet.seqNum << " due to timeout" << std::endl;
+                    std::cout << "Resending data packet " << buffer[idx].packet.seqNum << " due to timeout" << std::endl;
                     buffer[idx].lastSent = now;
                     sendto(socketS, (char*)&buffer[idx].packet, sizeof(Packet), 0, (sockaddr*)&addrDest, sizeof(addrDest));
                 }
             }
-            lock.unlock();
             std::this_thread::sleep_for(std::chrono::milliseconds(50));
         }
-    });
+        });
 
 
     while (true) {
@@ -220,6 +235,7 @@ bool Sender::sendDataPackets(const std::string& filePath) {
 
     sendingDone = true;
     ackThread.detach();   // You may safely detach or use join if you add a break mechanism
+	sendingDoneFlag.store(true); // Signal the resend thread to stop
     resendThread.join();
 
     fclose(file_in);

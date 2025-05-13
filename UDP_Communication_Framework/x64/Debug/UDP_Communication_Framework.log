@@ -1,22 +1,10 @@
 ﻿  Sender.cpp
-C:\Users\vojta\Desktop\CVUT\2. sem\psia\psia_semest\UDP_Communication_Framework\Sender.h(24,9): warning C4005: BUFFERS_LEN: předefinování makra
-  (kompilování zdrojového souboru /Sender.cpp)
-      C:\Users\vojta\Desktop\CVUT\2. sem\psia\psia_semest\UDP_Communication_Framework\utils.h(18,9):
-      zkontrolujte předchozí definici „BUFFERS_LEN“
+C:\Programovani\CVUT\PSIA\PSIA_udp_communication\UDP_Communication_Framework\Sender.h(23,9): warning C4005: 'BUFFERS_LEN': macro redefinition
+  (compiling source file '/Sender.cpp')
+      C:\Programovani\CVUT\PSIA\PSIA_udp_communication\UDP_Communication_Framework\utils.h(18,9):
+      see previous definition of 'BUFFERS_LEN'
   
-C:\Users\vojta\Desktop\CVUT\2. sem\psia\psia_semest\UDP_Communication_Framework\Sender.cpp(120,44): warning C4267: =: Převod z: size_t na: int, může dojít ke ztrátě dat.
-  (kompilování zdrojového souboru /Sender.cpp)
+C:\Programovani\CVUT\PSIA\PSIA_udp_communication\UDP_Communication_Framework\Sender.cpp(130,44): warning C4267: '=': conversion from 'size_t' to 'int', possible loss of data
+  (compiling source file '/Sender.cpp')
   
-  UDP_Communication_Framework.cpp
-C:\Users\vojta\Desktop\CVUT\2. sem\psia\psia_semest\UDP_Communication_Framework\Sender.h(24,9): warning C4005: BUFFERS_LEN: předefinování makra
-  (kompilování zdrojového souboru /UDP_Communication_Framework.cpp)
-      C:\Users\vojta\Desktop\CVUT\2. sem\psia\psia_semest\UDP_Communication_Framework\utils.h(18,9):
-      zkontrolujte předchozí definici „BUFFERS_LEN“
-  
-C:\Users\vojta\Desktop\CVUT\2. sem\psia\psia_semest\UDP_Communication_Framework\UDP_Communication_Framework.cpp(12,9): warning C4005: BUFFERS_LEN: předefinování makra
-  (kompilování zdrojového souboru /UDP_Communication_Framework.cpp)
-      C:\Users\vojta\Desktop\CVUT\2. sem\psia\psia_semest\UDP_Communication_Framework\Sender.h(24,9):
-      zkontrolujte předchozí definici „BUFFERS_LEN“
-  
-  Generování kódu...
-  UDP_Communication_Framework.vcxproj -> C:\Users\vojta\Desktop\CVUT\2. sem\psia\psia_semest\x64\Debug\UDP_Communication_Framework.exe
+  UDP_Communication_Framework.vcxproj -> C:\Programovani\CVUT\PSIA\PSIA_udp_communication\x64\Debug\UDP_Communication_Framework.exe

@@ -15,7 +15,6 @@
 #include <thread>
 #include <mutex>
 #include <condition_variable>
-#include <vector>
 #include <chrono>
 #include <atomic>
 #include <unordered_set>
@@ -35,20 +34,14 @@ struct PacketEntry {
 
 class Sender {
 public:
+	// Constructor - initializes socket and address
     Sender(int local_port, int target_port, wchar_t* target_IP);
     ~Sender();
 
-    // Initializes the sender and sends the file
+    // Runs the main sender program
     int run(const std::string& filePath, const std::string& fileName);
 
 private:
-    void calculateSHA256(const std::string& filePath, std::string& hash);
-    bool sendFileNamePacket(const std::string& fileName);
-    bool sendDataPackets(const std::string& filePath);
-    bool sendFinalPacket(const std::string& hash);
-    bool waitForACK(int packetType, int seqNum);
-    void waitForAcksThread();
-
     // Socket-related members
     SOCKET socketS;
     sockaddr_in addrDest;
@@ -62,6 +55,13 @@ private:
     bool ackReceived[WINDOW_SIZE] = { false };
     std::unordered_set<int> earlyAcks;
     std::mutex earlyAckMutex;
+
+    void calculateSHA256(const std::string& filePath, std::string& hash);
+    bool sendFileNamePacket(const std::string& fileName);
+    bool sendDataPackets(const std::string& filePath);
+    bool sendFinalPacket(const std::string& hash);
+    bool waitForACK(int packetType, int seqNum);
+    void waitForAcksThread();
 };
 
 #endif // SENDER_H
