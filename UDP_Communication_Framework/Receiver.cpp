@@ -144,12 +144,29 @@ void Receiver::handleDataPacket(const Packet& packet) {
     char ackResult = (crc == packet.crc) ? 1 : 0;
 
     if (ackResult) {
-        fwrite(packet.data, packet.dataSize, 1, file_out);
-        crc_fail = false;
+        // Store the packet in the buffer at the position corresponding to its sequence number
+        int bufferIndex = packet.seqNum % WINDOW_SIZE;
+        buffer[bufferIndex].packet = packet;
+        buffer[bufferIndex].arrived = true;
+
+        // If this packet is in order (seqNum == baseSeqNum), write it to the file
+        if (packet.seqNum == baseSeqNum + 1) {
+            // Write the packet data to the file
+            fwrite(packet.data, packet.dataSize, 1, file_out);
+            crc_fail = false;
+
+            // Move baseSeqNum forward and write all packets in order
+            while (buffer[(baseSeqNum + 1) % WINDOW_SIZE].arrived) {
+                baseSeqNum++; // Slide the window
+                fwrite(buffer[(baseSeqNum) % WINDOW_SIZE].packet.data, buffer[(baseSeqNum) % WINDOW_SIZE].packet.dataSize, 1, file_out);
+                buffer[(baseSeqNum) % WINDOW_SIZE].arrived = false; // Reset the slot after writing
+            }
+        }
     }
     else {
         crc_fail = true;
     }
+
 
     setBufferToNum(answerPacket.data, answerPacket.dataSize, ackResult);
     printf("%sSending ACK packet: %d for seqNum: %d\n%s", (ackResult) ? GREEN : RED, ackResult, packet.seqNum, RESET);
@@ -199,6 +216,7 @@ void Receiver::handleFinalPacket(const Packet& packet) {
         sendto(socketS, (char*)&answerPacket, sizeof(Packet), 0, (sockaddr*)&addrDest, sizeof(addrDest));
 
         retryCounter += (sha256_ok ? 0 : 1);
+        lastSeqNum = -1;
     }
     else {
         crc_fail = true;

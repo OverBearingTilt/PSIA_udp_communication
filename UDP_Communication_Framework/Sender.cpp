@@ -8,6 +8,9 @@
 Sender::Sender(int local_port, int target_port, wchar_t* target_IP) {
     InitWinsock();
 
+    base = 0;
+    nextSeqNum = 0;
+
     // Initialize socket
     socketS = socket(AF_INET, SOCK_DGRAM, 0);
     if (socketS == INVALID_SOCKET) {
@@ -37,7 +40,7 @@ Sender::~Sender() {
 }
 
 void Sender::waitForAcksThread() {
-    while (true) {
+    while (!stopThreads.load()) {
         Packet ackPacket;
         sockaddr_in from;
         int fromLen = sizeof(from);
@@ -74,31 +77,28 @@ int Sender::run(const std::string& filePath, const std::string& fileName) {
         calculateSHA256(filePath, sha256Hash);
         char try_counter = 0;
         bool sha_ok = false;
-        int ret_val = 1;
 
-        //while (try_counter <3 && !sha_ok) {
-            bool end_while = false;
-            //while (!end_while) {
-                end_while = sendFileNamePacket(fileName);
-            //}
-
-            end_while = false;
-            if (!end_while) {
-                end_while = sendDataPackets(filePath);
+        while (try_counter < 3 && !sha_ok) {
+            if (!sendFileNamePacket(fileName)) {
+                ++try_counter;
+                continue;
             }
 
-            if (!sendFinalPacket(sha256Hash)) {
+            if (!sendDataPackets(filePath)) {
                 ++try_counter;
+                continue;
+            }
+
+            if (sendFinalPacket(sha256Hash)) {
                 sha_ok = true;
-                //continue;
             }
             else {
-                sha_ok = false;
+                ++try_counter;
             }
-        //}
+        }
 
-        ret_val = !sha_ok;
-        return ret_val;
+        return !sha_ok;
+
     }
     catch (const std::exception& e) {
         std::cerr << "Error: " << e.what() << std::endl;
@@ -228,13 +228,10 @@ bool Sender::sendDataPackets(const std::string& filePath) {
         nextSeqNum++;
     }
 
-    // Wait until all packets are acknowledged
-    /*while (base < nextSeqNum) {
-        std::this_thread::sleep_for(std::chrono::milliseconds(50));
-    }*/
-
-    sendingDone = true;
-    ackThread.detach();   // You may safely detach or use join if you add a break mechanism
+    sendingDone = true; 
+    stopThreads.store(true);
+    if (ackThread.joinable())
+        ackThread.join();
 	sendingDoneFlag.store(true); // Signal the resend thread to stop
     resendThread.join();
 
@@ -251,46 +248,61 @@ bool Sender::sendFinalPacket(const std::string& hash) {
     finPacket.dataSize = SHA256_LEN;
     finPacket.crc = CRC::Calculate(finPacket.hashArray, finPacket.dataSize, CRC::CRC_32());
 
-    std::cout << "Sending final packet" << std::endl;
-    sendto(socketS, (char*)&finPacket, sizeof(Packet), 0, (sockaddr*)&addrDest, sizeof(addrDest));
+    const int maxRetries = 3;
+    int attempts = 0;
 
-    return waitForACK(ANSWER_SHA, finPacket.seqNum);
+    while (attempts < maxRetries) {
+        std::cout << YELLOW << "Sending final packet (attempt " << (attempts + 1) << ")" << RESET << std::endl;
+        sendto(socketS, (char*)&finPacket, sizeof(Packet), 0, (sockaddr*)&addrDest, sizeof(addrDest));
+        //wait for SHA
+        if (waitForACK(ANSWER_SHA, finPacket.seqNum)) {
+            std::cout << GREEN << "SHA ACK received! File transfer successful." << RESET << std::endl;
+            return true;
+        }
+        else {
+            std::cerr << RED << "SHA mismatch! Restarting whole transfer..." << RESET << std::endl;
+            return false;
+        }
+        //wait for CRC
+        if (!waitForACK(ANSWER_CRC, finPacket.seqNum)) {
+            std::cerr << RED << "CRC ACK not received or invalid. Retrying..." << RESET << std::endl;
+            ++attempts;
+            continue;
+        }
+    }
+
+    std::cerr << RED << "Final packet failed after " << maxRetries << " attempts!" << RESET << std::endl;
+    return false;
 }
 
 bool Sender::waitForACK(int packetType, int seqNum) {
-    Packet ansPacket;
-    sockaddr_in from;
-    int fromlen = sizeof(from);
+    for (int retries = 0; retries < 3; ++retries) {
+        fd_set readfds;
+        FD_ZERO(&readfds);
+        FD_SET(socketS, &readfds);
 
-    fd_set readfds;
-    FD_ZERO(&readfds);
-    FD_SET(socketS, &readfds);
+        timeval timeout{ 0, TIMEOUT_MS * 1000 };
 
-    struct timeval timeout;
-    timeout.tv_sec = 0;
-    timeout.tv_usec = TIMEOUT_MS*1000;
-    bool delivered = false;
+        int selectResult = select(0, &readfds, NULL, NULL, &timeout);
+        if (selectResult > 0) {
+            Packet ansPacket;
+            sockaddr_in from;
+            int fromlen = sizeof(from);
 
-    int selectResult = select(0, &readfds, NULL, NULL, &timeout);
-    if (selectResult > 0) {
-        std::cerr << "Waiting for ACK" << std::endl;
-        if (recvfrom(socketS, (char*)&ansPacket, sizeof(Packet), 0, (sockaddr*)&from, &fromlen) == SOCKET_ERROR) {
-            std::cerr << "Socket error while waiting for ACK" << std::endl;
-            return false;
+            if (recvfrom(socketS, (char*)&ansPacket, sizeof(Packet), 0, (sockaddr*)&from, &fromlen) != SOCKET_ERROR) {
+                if (ansPacket.type == packetType && ansPacket.seqNum == seqNum) {
+                    return true;
+                }
+            }
         }
-        delivered = !isBufferAllNum(ansPacket.data, ansPacket.dataSize, 0);
-        if (!delivered) {
-            std::cerr << RED << "ACK came in negative"<< RESET << std::endl;
+        else if (selectResult == 0) {
+            std::cerr << "Timeout waiting for ACK. Retrying..." << std::endl;
         }
-		std::cout << "Delivery state: " << delivered << std::endl;
-        return delivered;
+        else {
+            std::cerr << "Select error while waiting for ACK" << std::endl;
+            break;
+        }
     }
-    else if (selectResult == 0) {
-        std::cerr << "ACK timeout for packet " << seqNum << std::endl;
-        return false;
-    }
-    else {
-        std::cerr << "Select error while waiting for ACK" << std::endl;
-        return false;
-    }
+
+    return false;
 }

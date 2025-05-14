@@ -18,12 +18,13 @@
 #include <chrono>
 #include <atomic>
 #include <unordered_set>
+#include <map>
 
 
 #define BUFFERS_LEN 1024 - sizeof(uint32_t) - 2 * sizeof(int) - sizeof(char)
 #define SHA256_LEN 64
 #define TIMEOUT_MS 500
-#define WINDOW_SIZE 20
+#define WINDOW_SIZE 5
 
 struct PacketEntry {
     Packet packet;
@@ -55,6 +56,7 @@ private:
     bool ackReceived[WINDOW_SIZE] = { false };
     std::unordered_set<int> earlyAcks;
     std::mutex earlyAckMutex;
+    std::atomic<bool> stopThreads = false;
 
     void calculateSHA256(const std::string& filePath, std::string& hash);
     bool sendFileNamePacket(const std::string& fileName);

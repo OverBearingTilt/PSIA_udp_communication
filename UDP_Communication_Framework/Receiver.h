@@ -18,7 +18,14 @@
 #include "utils.h"
 #include "CRC.h"
 
+constexpr auto WINDOW_SIZE = 5;
 
+
+struct PacketEntryRec {
+    Packet packet;
+    bool arrived = false;
+
+};
 
 class Receiver {
 public:
@@ -38,6 +45,7 @@ private:
     int fromlen = sizeof(from);
     int retryCounter = 0;
     int lastSeqNum = -1;
+    int baseSeqNum = -1;
 
     FILE* file_out = nullptr;
     char* fileName = nullptr;
@@ -45,6 +53,7 @@ private:
     SHA256 sha256;
     bool sha256_ok = false;
     bool crc_fail = false;
+    PacketEntryRec buffer[WINDOW_SIZE];
 
     // Private methods for handling specific packet types
     void handleDuplicatePacket(const Packet& packet);
