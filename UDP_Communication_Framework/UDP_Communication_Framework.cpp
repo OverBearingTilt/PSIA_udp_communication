@@ -23,8 +23,8 @@
 #define BLUE "\x1b[34m"
 #define RESET "\x1b[0m"
 
-//#define SENDER
-#define RECEIVER
+#define SENDER
+//#define RECEIVER
 
 #define PORT_A 5000
 #define PORT_B 5001

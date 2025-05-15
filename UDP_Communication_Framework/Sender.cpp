@@ -229,14 +229,14 @@ bool Sender::sendDataPackets(const std::string& filePath) {
     }
 
 	// wait for all packets to be acknowledged
-	while (base < nextSeqNum) {
+	while (base < nextSeqNum+1) {
 		// wait
 		std::chrono::milliseconds waitTime(50);
 	}
 
     sendingDone = true; 
     stopThreads.store(true);
-    if (ackThread.joinable())
+    //if (ackThread.joinable())
         ackThread.join();
 	sendingDoneFlag.store(true); // Signal the resend thread to stop
     resendThread.join();
@@ -288,7 +288,7 @@ bool Sender::waitForACK(int packetType, int seqNum) {
         FD_ZERO(&readfds);
         FD_SET(socketS, &readfds);
 
-        timeval timeout{ 0, TIMEOUT_MS * 1000 };
+        timeval timeout{ 0, TIMEOUT_MS * 3000 };
 
         int selectResult = select(0, &readfds, NULL, NULL, &timeout);
         if (selectResult > 0) {
