@@ -243,7 +243,7 @@ bool Sender::sendDataPackets(const std::string& filePath) {
 bool Sender::sendFinalPacket(const std::string& hash) {
     Packet finPacket;
     finPacket.type = FINAL;
-    finPacket.seqNum = ++seqNum;
+    finPacket.seqNum = seqNum;
     std::strcpy(finPacket.hashArray, hash.c_str());
     finPacket.dataSize = SHA256_LEN;
     finPacket.crc = CRC::Calculate(finPacket.hashArray, finPacket.dataSize, CRC::CRC_32());
