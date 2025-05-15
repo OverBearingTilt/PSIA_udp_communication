@@ -43,7 +43,7 @@ int Receiver::run() {
         }
 
         // Check for duplicate packets
-        if (packet.seqNum == lastSeqNum) {
+        if (packet.seqNum == lastSeqNum || packet.seqNum < baseSeqNum) {
             handleDuplicatePacket(packet);
             continue;
         }
@@ -157,7 +157,11 @@ void Receiver::handleDataPacket(const Packet& packet) {
         buffer[bufferIndex].packet = packet;
         buffer[bufferIndex].arrived = true;
 
+        // \/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/
+        // for debugging, delete later
 		printf("Seqnum = %d, baseSeqNum = %d\n", packet.seqNum, baseSeqNum);
+        // /\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\
+
         // If this packet is in order (seqNum == baseSeqNum), write it to the file
         if (packet.seqNum == baseSeqNum) {
             // Write the packet data to the file

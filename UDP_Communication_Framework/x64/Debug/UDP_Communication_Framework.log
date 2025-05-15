@@ -1,12 +1,4 @@
-﻿  Sender.cpp
-C:\Programovani\CVUT\PSIA\PSIA_udp_communication\UDP_Communication_Framework\Sender.h(24,9): warning C4005: 'BUFFERS_LEN': macro redefinition
-  (compiling source file '/Sender.cpp')
-      C:\Programovani\CVUT\PSIA\PSIA_udp_communication\UDP_Communication_Framework\utils.h(18,9):
-      see previous definition of 'BUFFERS_LEN'
-  
-C:\Programovani\CVUT\PSIA\PSIA_udp_communication\UDP_Communication_Framework\Sender.cpp(130,44): warning C4267: '=': conversion from 'size_t' to 'int', possible loss of data
-  (compiling source file '/Sender.cpp')
-  
+﻿  Receiver.cpp
   UDP_Communication_Framework.cpp
 C:\Programovani\CVUT\PSIA\PSIA_udp_communication\UDP_Communication_Framework\Sender.h(24,9): warning C4005: 'BUFFERS_LEN': macro redefinition
   (compiling source file '/UDP_Communication_Framework.cpp')
