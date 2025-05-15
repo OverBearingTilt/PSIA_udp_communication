@@ -228,6 +228,12 @@ bool Sender::sendDataPackets(const std::string& filePath) {
         nextSeqNum++;
     }
 
+	// wait for all packets to be acknowledged
+	while (base < nextSeqNum) {
+		// wait
+		std::chrono::milliseconds waitTime(50);
+	}
+
     sendingDone = true; 
     stopThreads.store(true);
     if (ackThread.joinable())
@@ -254,6 +260,12 @@ bool Sender::sendFinalPacket(const std::string& hash) {
     while (attempts < maxRetries) {
         std::cout << YELLOW << "Sending final packet (attempt " << (attempts + 1) << ")" << RESET << std::endl;
         sendto(socketS, (char*)&finPacket, sizeof(Packet), 0, (sockaddr*)&addrDest, sizeof(addrDest));
+        //wait for CRC
+        if (!waitForACK(ANSWER_CRC, finPacket.seqNum)) {
+            std::cerr << RED << "CRC ACK not received or invalid. Retrying..." << RESET << std::endl;
+            ++attempts;
+            continue;
+        }
         //wait for SHA
         if (waitForACK(ANSWER_SHA, finPacket.seqNum)) {
             std::cout << GREEN << "SHA ACK received! File transfer successful." << RESET << std::endl;
@@ -263,12 +275,7 @@ bool Sender::sendFinalPacket(const std::string& hash) {
             std::cerr << RED << "SHA mismatch! Restarting whole transfer..." << RESET << std::endl;
             return false;
         }
-        //wait for CRC
-        if (!waitForACK(ANSWER_CRC, finPacket.seqNum)) {
-            std::cerr << RED << "CRC ACK not received or invalid. Retrying..." << RESET << std::endl;
-            ++attempts;
-            continue;
-        }
+        
     }
 
     std::cerr << RED << "Final packet failed after " << maxRetries << " attempts!" << RESET << std::endl;
@@ -291,6 +298,7 @@ bool Sender::waitForACK(int packetType, int seqNum) {
 
             if (recvfrom(socketS, (char*)&ansPacket, sizeof(Packet), 0, (sockaddr*)&from, &fromlen) != SOCKET_ERROR) {
                 if (ansPacket.type == packetType && ansPacket.seqNum == seqNum) {
+                    // should check the ACK data - TODO
                     return true;
                 }
             }
