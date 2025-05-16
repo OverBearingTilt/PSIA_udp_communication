@@ -231,11 +231,6 @@ void Receiver::handleFinalPacket(const Packet& packet) {
         printf("%sSending SHA result ACK: %d\n%s", (sha256_ok) ? GREEN : RED, sha256_ok, RESET);
         sendto(socketS, (char*)&answerPacket, sizeof(Packet), 0, (sockaddr*)&addrDest, sizeof(addrDest));
 
-		if (!sha256_ok) {
-			printf("%sTransfer failed, press ENTER for repetition.%s\n", RED, RESET);
-			getchar();
-		}
-
 
         retryCounter += (sha256_ok ? 0 : 1);
         lastSeqNum = -1;
