@@ -288,7 +288,7 @@ bool Sender::waitForACK(int packetType, int seqNum) {
         FD_ZERO(&readfds);
         FD_SET(socketS, &readfds);
 
-        timeval timeout{ 0, TIMEOUT_MS * 3000 };
+        timeval timeout{ 0, TIMEOUT_MS * 1000 };
 
         int selectResult = select(0, &readfds, NULL, NULL, &timeout);
         if (selectResult > 0) {
