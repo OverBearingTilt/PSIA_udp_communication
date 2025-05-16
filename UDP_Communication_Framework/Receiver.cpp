@@ -18,7 +18,7 @@ Receiver::Receiver(int local_port, int target_port, wchar_t* target_IP) {
     addrDest.sin_family = AF_INET;
     addrDest.sin_port = htons(target_port);
     InetPton(AF_INET, target_IP, &addrDest.sin_addr.s_addr);
-    // originaly _T(target_IP) which worked only on literals
+    // originally _T(target_IP) which worked only on literals
 
 }
 
@@ -159,7 +159,7 @@ void Receiver::handleDataPacket(const Packet& packet) {
 
         // \/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/
         // for debugging, delete later
-		printf("Seqnum = %d, baseSeqNum = %d\n", packet.seqNum, baseSeqNum);
+		printf("DEBUG: Seqnum = %d, baseSeqNum = %d\n", packet.seqNum, baseSeqNum);
         // /\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\
 
         // If this packet is in order (seqNum == baseSeqNum), write it to the file
@@ -232,7 +232,7 @@ void Receiver::handleFinalPacket(const Packet& packet) {
         sendto(socketS, (char*)&answerPacket, sizeof(Packet), 0, (sockaddr*)&addrDest, sizeof(addrDest));
 
 		if (!sha256_ok) {
-			printf("%sTransfer failed, pres ENTER for repetition.%s\n", RED, RESET);
+			printf("%sTransfer failed, press ENTER for repetition.%s\n", RED, RESET);
 			getchar();
 		}
 
