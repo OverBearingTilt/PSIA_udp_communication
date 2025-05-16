@@ -229,7 +229,7 @@ bool Sender::sendDataPackets(const std::string& filePath) {
     }
 
 	// wait for all packets to be acknowledged
-	while (base < nextSeqNum+1) {
+	while (base <= nextSeqNum) {
 		// wait
 		std::chrono::milliseconds waitTime(50);
 	}
