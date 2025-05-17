@@ -7,7 +7,7 @@
 #include "Sender.h"
 #include "utils.h"
 
-#define TARGET_IP "192.168.0.108"
+#define TARGET_IP "127.0.0.1"
 
 #define BUFFERS_LEN 1024 - sizeof(uint32_t) - 2*sizeof(int) - sizeof(char)
 #define NAME_LEN 64
@@ -26,8 +26,8 @@
 #define SENDER
 //#define RECEIVER
 
-#define PORT_A 5000
-#define PORT_B 5001
+#define PORT_A 5004
+#define PORT_B 5002
 // sender with netderper:
 // local/A = 5004
 // target/B = 5002

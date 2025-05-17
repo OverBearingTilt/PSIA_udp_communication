@@ -45,26 +45,31 @@ void Sender::waitForAcksThread() {
         sockaddr_in from;
         int fromLen = sizeof(from);
 
-		for (int i = 0; i < WINDOW_SIZE; ++i) {
+		/*for (int i = 0; i < WINDOW_SIZE; ++i) {
 			if (buffer[i].packet.type == FILESIZE) {
 				buffer[i].acknowledged = true;
 				ackReceived[i] = true;
 			}
-		}
+		}*/
 
         if (recvfrom(socketS, (char*)&ackPacket, sizeof(Packet), 0, (sockaddr*)&from, &fromLen) > 0) {
             if (ackPacket.type == ANSWER_CRC && isBufferAllNum(ackPacket.data, ackPacket.dataSize, 1)) {
                 std::unique_lock<std::mutex> lock(ack_mutex);
                 int seq = ackPacket.seqNum;
-                ackReceived[seq % WINDOW_SIZE] = true;
-                buffer[seq % WINDOW_SIZE].acknowledged = true;
-                ack_cv.notify_all();
-                std::cout << "ACK received for packet: " << seq << std::endl;
-
-                // Slide the window
-                while (ackReceived[base % WINDOW_SIZE]) {
-                    ackReceived[base % WINDOW_SIZE] = false;
-                    base++;
+                int idx = seq % WINDOW_SIZE;
+                // Only acknowledge if this is a valid, outstanding packet
+                if (!buffer[idx].acknowledged && buffer[idx].packet.seqNum == seq) {
+                    ackReceived[idx] = true;
+                    buffer[idx].acknowledged = true;
+                    std::cout << "ACK received for packet: " << seq << std::endl;
+                    // Slide window
+                    while (ackReceived[base % WINDOW_SIZE] && buffer[base % WINDOW_SIZE].packet.seqNum == base) {
+                        ackReceived[base % WINDOW_SIZE] = false;
+                        buffer[base % WINDOW_SIZE].acknowledged = false;
+                        base++;
+                        std::cout << "Window was moved, base: " << base << std::endl;
+                    }
+                    ack_cv.notify_all();
                 }
             }
             else {
@@ -168,8 +173,10 @@ bool Sender::sendDataPackets(const std::string& filePath) {
             auto now = std::chrono::steady_clock::now();
             for (int j = baseSnapshot; j < nextSeqNumSnapshot; ++j) {
                 int idx = j % WINDOW_SIZE;
+                // Only resend if the packet is valid and not acknowledged
                 if (buffer[idx].packet.type == DATA &&
                     !buffer[idx].acknowledged &&
+                    buffer[idx].packet.seqNum == j && // Ensure correct mapping
                     std::chrono::duration_cast<std::chrono::milliseconds>(now - buffer[idx].lastSent).count() > TIMEOUT_MS) {
                     std::cout << "Resending data packet " << buffer[idx].packet.seqNum << " due to timeout" << std::endl;
                     buffer[idx].lastSent = now;
@@ -178,7 +185,7 @@ bool Sender::sendDataPackets(const std::string& filePath) {
             }
             std::this_thread::sleep_for(std::chrono::milliseconds(50));
         }
-        });
+    });
 
 
     while (true) {
@@ -234,7 +241,7 @@ bool Sender::sendDataPackets(const std::string& filePath) {
     }
 
 	// wait for all packets to be acknowledged
-	while (base <= nextSeqNum) {
+	while (base <= seqNum) {
 		// wait
 		std::chrono::milliseconds waitTime(50);
 	}
