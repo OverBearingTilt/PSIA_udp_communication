@@ -298,8 +298,7 @@ bool Sender::waitForACK(int packetType, int seqNum) {
 
             if (recvfrom(socketS, (char*)&ansPacket, sizeof(Packet), 0, (sockaddr*)&from, &fromlen) != SOCKET_ERROR) {
                 if (ansPacket.type == packetType && ansPacket.seqNum == seqNum) {
-                    // should check the ACK data - TODO
-                    return true;
+                    return isBufferAllNum(ansPacket.data, ansPacket.dataSize, 1);
                 }
             }
         }
