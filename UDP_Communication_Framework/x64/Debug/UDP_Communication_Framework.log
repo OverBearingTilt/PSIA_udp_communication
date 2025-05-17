@@ -1,1 +1,10 @@
-﻿  UDP_Communication_Framework.vcxproj -> C:\Programovani\CVUT\PSIA\PSIA_udp_communication\x64\Debug\UDP_Communication_Framework.exe
+﻿  Sender.cpp
+C:\Programovani\CVUT\PSIA\PSIA_udp_communication\UDP_Communication_Framework\Sender.h(24,9): warning C4005: 'BUFFERS_LEN': macro redefinition
+  (compiling source file '/Sender.cpp')
+      C:\Programovani\CVUT\PSIA\PSIA_udp_communication\UDP_Communication_Framework\utils.h(18,9):
+      see previous definition of 'BUFFERS_LEN'
+  
+C:\Programovani\CVUT\PSIA\PSIA_udp_communication\UDP_Communication_Framework\Sender.cpp(141,44): warning C4267: '=': conversion from 'size_t' to 'int', possible loss of data
+  (compiling source file '/Sender.cpp')
+  
+  UDP_Communication_Framework.vcxproj -> C:\Programovani\CVUT\PSIA\PSIA_udp_communication\x64\Debug\UDP_Communication_Framework.exe

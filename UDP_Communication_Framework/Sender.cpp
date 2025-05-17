@@ -68,8 +68,8 @@ void Sender::waitForAcksThread() {
                         buffer[base % WINDOW_SIZE].acknowledged = false;
                         base++;
                         std::cout << "Window was moved, base: " << base << std::endl;
+                        ack_cv.notify_all();
                     }
-                    ack_cv.notify_all();
                 }
             }
             else {
@@ -93,7 +93,8 @@ int Sender::run(const std::string& filePath, const std::string& fileName) {
                 ++try_counter;
                 continue;
             }
-
+			buffer[0].acknowledged = true; // :)
+			ackReceived[0] = true;
             if (!sendDataPackets(filePath)) {
                 ++try_counter;
                 continue;
@@ -140,6 +141,10 @@ bool Sender::sendFileNamePacket(const std::string& fileName) {
     fileNamePacket.dataSize = fileName.size();
     std::strcpy(fileNamePacket.fileName, fileName.c_str());
     fileNamePacket.crc = CRC::Calculate(fileNamePacket.fileName, fileNamePacket.dataSize, CRC::CRC_32());
+
+	buffer[0].packet = fileNamePacket;
+	buffer[0].acknowledged = false;
+	buffer[0].lastSent = std::chrono::steady_clock::now();
 
     std::cout << "Sending file name packet: " << fileName << std::endl;
     sendto(socketS, (char*)&fileNamePacket, sizeof(Packet), 0, (sockaddr*)&addrDest, sizeof(addrDest));
