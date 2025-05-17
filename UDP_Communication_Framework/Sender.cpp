@@ -61,7 +61,7 @@ void Sender::waitForAcksThread() {
                 if (!buffer[idx].acknowledged && buffer[idx].packet.seqNum == seq) {
                     ackReceived[idx] = true;
                     buffer[idx].acknowledged = true;
-                    std::cout << "ACK received for packet: " << seq << std::endl;
+                    std::cout << GREEN << "ACK received for packet: " << seq << RESET << std::endl;
                     // Slide window
                     while (ackReceived[base % WINDOW_SIZE] && buffer[base % WINDOW_SIZE].packet.seqNum == base) {
                         ackReceived[base % WINDOW_SIZE] = false;
@@ -211,11 +211,19 @@ bool Sender::sendDataPackets(const std::string& filePath) {
             dataPacket.crc = CRC::Calculate(dataPacket.data, dataPacket.dataSize, CRC::CRC_32());
 
             int idx = dataPacket.seqNum % WINDOW_SIZE;
+            while (!buffer[idx].acknowledged && seqNum > WINDOW_SIZE) {
+				std::cout << "Waiting for slot " << idx << " to be free" << std::endl;
+                ack_cv.wait(lock); // Wait until the slot is free
+            }
+            if (!buffer[idx].acknowledged) {
+                std::cout << "Warning: Overwriting unacknowledged packet in slot " << idx << " (seqNum " << buffer[idx].packet.seqNum << ")" << std::endl;
+            }
             buffer[idx].packet = dataPacket;
             buffer[idx].acknowledged = false;
             buffer[idx].lastSent = std::chrono::steady_clock::now();
 
-            std::cout << "Sending data packet number " << dataPacket.seqNum << std::endl;
+
+            std::cout << YELLOW << "Sending data packet number " << dataPacket.seqNum << RESET << std::endl;
             sendto(socketS, (char*)&dataPacket, sizeof(Packet), 0, (sockaddr*)&addrDest, sizeof(addrDest));
             nextSeqNum++;
 
