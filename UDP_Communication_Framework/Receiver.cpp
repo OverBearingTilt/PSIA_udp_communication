@@ -226,7 +226,7 @@ void Receiver::handleFinalPacket(const Packet& packet) {
 
         // Send SHA result
         answerPacket.type = ANSWER_SHA;
-        answerPacket.seqNum = packet.seqNum + 1;
+        answerPacket.seqNum = packet.seqNum;
         setBufferToNum(answerPacket.data, answerPacket.dataSize, sha256_ok);
         printf("%sSending SHA result ACK: %d\n%s", (sha256_ok) ? GREEN : RED, sha256_ok, RESET);
         sendto(socketS, (char*)&answerPacket, sizeof(Packet), 0, (sockaddr*)&addrDest, sizeof(addrDest));

@@ -53,7 +53,7 @@ void Sender::waitForAcksThread() {
 		}
 
         if (recvfrom(socketS, (char*)&ackPacket, sizeof(Packet), 0, (sockaddr*)&from, &fromLen) > 0) {
-            if (ackPacket.type == ANSWER_CRC) {
+            if (ackPacket.type == ANSWER_CRC && isBufferAllNum(ackPacket.data, ackPacket.dataSize, 1)) {
                 std::unique_lock<std::mutex> lock(ack_mutex);
                 int seq = ackPacket.seqNum;
                 ackReceived[seq % WINDOW_SIZE] = true;
@@ -66,6 +66,11 @@ void Sender::waitForAcksThread() {
                     ackReceived[base % WINDOW_SIZE] = false;
                     base++;
                 }
+            }
+            else {
+				printf("%sInvalid ACK received! Number: %d\n%s", RED, ackPacket.seqNum, RESET);
+                ackReceived[ackPacket.seqNum % WINDOW_SIZE] = false;
+                buffer[ackPacket.seqNum % WINDOW_SIZE].acknowledged = false;
             }
         }
     }
@@ -260,13 +265,14 @@ bool Sender::sendFinalPacket(const std::string& hash) {
     while (attempts < maxRetries) {
         std::cout << YELLOW << "Sending final packet (attempt " << (attempts + 1) << ")" << RESET << std::endl;
         sendto(socketS, (char*)&finPacket, sizeof(Packet), 0, (sockaddr*)&addrDest, sizeof(addrDest));
-        //wait for CRC
+
+        // wait for CRC
         if (!waitForACK(ANSWER_CRC, finPacket.seqNum)) {
             std::cerr << RED << "CRC ACK not received or invalid. Retrying..." << RESET << std::endl;
             ++attempts;
             continue;
         }
-        //wait for SHA
+        // wait for SHA
         if (waitForACK(ANSWER_SHA, finPacket.seqNum)) {
             std::cout << GREEN << "SHA ACK received! File transfer successful." << RESET << std::endl;
             return true;
