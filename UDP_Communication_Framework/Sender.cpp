@@ -39,48 +39,6 @@ Sender::~Sender() {
     WSACleanup();
 }
 
-void Sender::waitForAcksThread() {
-    while (!stopThreads.load()) {
-        Packet ackPacket;
-        sockaddr_in from;
-        int fromLen = sizeof(from);
-
-		/*for (int i = 0; i < WINDOW_SIZE; ++i) {
-			if (buffer[i].packet.type == FILESIZE) {
-				buffer[i].acknowledged = true;
-				ackReceived[i] = true;
-			}
-		}*/
-
-        if (recvfrom(socketS, (char*)&ackPacket, sizeof(Packet), 0, (sockaddr*)&from, &fromLen) > 0) {
-            if (ackPacket.type == ANSWER_CRC && isBufferAllNum(ackPacket.data, ackPacket.dataSize, 1)) {
-                std::unique_lock<std::mutex> lock(ack_mutex);
-                int seq = ackPacket.seqNum;
-                int idx = seq % WINDOW_SIZE;
-                // Only acknowledge if this is a valid, outstanding packet
-                if (!buffer[idx].acknowledged && buffer[idx].packet.seqNum == seq) {
-                    ackReceived[idx] = true;
-                    buffer[idx].acknowledged = true;
-                    std::cout << GREEN << "ACK received for packet: " << seq << RESET << std::endl;
-                    // Slide window
-                    while (ackReceived[base % WINDOW_SIZE] && buffer[base % WINDOW_SIZE].packet.seqNum == base) {
-                        ackReceived[base % WINDOW_SIZE] = false;
-                        buffer[base % WINDOW_SIZE].acknowledged = false;
-                        base++;
-                        std::cout << "Window was moved, base: " << base << std::endl;
-                        ack_cv.notify_all();
-                    }
-                }
-            }
-            else {
-				printf("%sInvalid ACK received! Number: %d\n%s", RED, ackPacket.seqNum, RESET);
-                ackReceived[ackPacket.seqNum % WINDOW_SIZE] = false;
-                buffer[ackPacket.seqNum % WINDOW_SIZE].acknowledged = false;
-            }
-        }
-    }
-}
-
 int Sender::run(const std::string& filePath, const std::string& fileName) {
     try {
         std::string sha256Hash;
@@ -93,8 +51,8 @@ int Sender::run(const std::string& filePath, const std::string& fileName) {
                 ++try_counter;
                 continue;
             }
-			buffer[0].acknowledged = true; // :)
-			ackReceived[0] = true;
+            buffer[0].acknowledged = true; // :)
+            ackReceived[0] = true;
             if (!sendDataPackets(filePath)) {
                 ++try_counter;
                 continue;
@@ -142,14 +100,14 @@ bool Sender::sendFileNamePacket(const std::string& fileName) {
     std::strcpy(fileNamePacket.fileName, fileName.c_str());
     fileNamePacket.crc = CRC::Calculate(fileNamePacket.fileName, fileNamePacket.dataSize, CRC::CRC_32());
 
-	buffer[0].packet = fileNamePacket;
-	buffer[0].acknowledged = false;
-	buffer[0].lastSent = std::chrono::steady_clock::now();
+    buffer[0].packet = fileNamePacket;
+    buffer[0].acknowledged = false;
+    buffer[0].lastSent = std::chrono::steady_clock::now();
 
     std::cout << "Sending file name packet: " << fileName << std::endl;
     sendto(socketS, (char*)&fileNamePacket, sizeof(Packet), 0, (sockaddr*)&addrDest, sizeof(addrDest));
 
-    return waitForACK(ANSWER_CRC, fileNamePacket.seqNum);
+    return handleACK(ANSWER_CRC, fileNamePacket.seqNum);
 }
 
 bool Sender::sendDataPackets(const std::string& filePath) {
@@ -166,10 +124,42 @@ bool Sender::sendDataPackets(const std::string& filePath) {
     int i = 0;
     bool sendingDone = false;
 
-    //std::this_thread::sleep_for(std::chrono::milliseconds(200));
-    std::thread ackThread(&Sender::waitForAcksThread, this);
-
     std::atomic<bool> sendingDoneFlag{ false }; // Use atomic for thread-safe signaling
+    std::atomic<bool> stopAckListener = false;
+
+    std::thread ackListenerThread([&]() {
+        while (!stopAckListener.load()) {
+            sockaddr_in from;
+            int fromlen = sizeof(from);
+            Packet ackPacket;
+            int recvLen = recvfrom(socketS, (char*)&ackPacket, sizeof(Packet), 0, (sockaddr*)&from, &fromlen);
+
+            if (recvLen != SOCKET_ERROR && ackPacket.type == ANSWER_CRC && isBufferAllNum(ackPacket.data, ackPacket.dataSize, 1)) {
+                std::unique_lock<std::mutex> lock(ack_mutex);
+                int seq = ackPacket.seqNum;
+                int idx = seq % WINDOW_SIZE;
+
+                if (seq >= base && seq < base + WINDOW_SIZE) {
+                    if (!buffer[idx].acknowledged) {
+                        std::cout << GREEN << "[ACK Thread] Received ACK for seqNum " << seq << RESET << std::endl;
+                        buffer[idx].acknowledged = true;
+                        ackReceived[seq] = true;
+
+                        // Slide window
+                        while (buffer[base % WINDOW_SIZE].acknowledged && base < seqNum) {
+                            std::cout << BLUE << "Sliding window base to " << (base + 1) << RESET << std::endl;
+                            base++;
+                            ack_cv.notify_all();
+                        }
+                    }
+                }
+            }
+            else {
+                // recvfrom timeout or garbage — optional logging
+            }
+        }
+        });
+
     std::thread resendThread([&]() {
         while (!sendingDoneFlag.load()) {
             std::unique_lock<std::mutex> lock(ack_mutex);
@@ -190,7 +180,7 @@ bool Sender::sendDataPackets(const std::string& filePath) {
             }
             std::this_thread::sleep_for(std::chrono::milliseconds(50));
         }
-    });
+        });
 
 
     while (true) {
@@ -212,7 +202,7 @@ bool Sender::sendDataPackets(const std::string& filePath) {
 
             int idx = dataPacket.seqNum % WINDOW_SIZE;
             while (!buffer[idx].acknowledged && seqNum > WINDOW_SIZE) {
-				std::cout << "Waiting for slot " << idx << " to be free" << std::endl;
+                std::cout << "Waiting for slot " << idx << " to be free" << std::endl;
                 ack_cv.wait(lock); // Wait until the slot is free
             }
             if (!buffer[idx].acknowledged) {
@@ -253,17 +243,19 @@ bool Sender::sendDataPackets(const std::string& filePath) {
         nextSeqNum++;
     }
 
-	// wait for all packets to be acknowledged
-	while (base <= seqNum) {
-		// wait
-		std::chrono::milliseconds waitTime(50);
-	}
+    // wait for all packets to be acknowledged
+    {
+        std::unique_lock<std::mutex> lock(ack_mutex);
+        ack_cv.wait(lock, [&]() {
+            return base.load() >= nextSeqNum.load();
+            });
+    }
 
-    sendingDone = true; 
-    stopThreads.store(true);
-    //if (ackThread.joinable())
-        ackThread.join();
-	sendingDoneFlag.store(true); // Signal the resend thread to stop
+    stopAckListener = true;
+    ackListenerThread.join();
+    //sendingDone = true;
+    //stopThreads.store(true);
+    sendingDoneFlag.store(true); // Signal the resend thread to stop
     resendThread.join();
 
     fclose(file_in);
@@ -287,13 +279,13 @@ bool Sender::sendFinalPacket(const std::string& hash) {
         sendto(socketS, (char*)&finPacket, sizeof(Packet), 0, (sockaddr*)&addrDest, sizeof(addrDest));
 
         // wait for CRC
-        if (!waitForACK(ANSWER_CRC, finPacket.seqNum)) {
+        if (!handleACK(ANSWER_CRC, finPacket.seqNum)) {
             std::cerr << RED << "CRC ACK not received or invalid. Retrying..." << RESET << std::endl;
             ++attempts;
             continue;
         }
         // wait for SHA
-        if (waitForACK(ANSWER_SHA, finPacket.seqNum)) {
+        if (handleACK(ANSWER_SHA, finPacket.seqNum)) {
             std::cout << GREEN << "SHA ACK received! File transfer successful." << RESET << std::endl;
             return true;
         }
@@ -301,41 +293,66 @@ bool Sender::sendFinalPacket(const std::string& hash) {
             std::cerr << RED << "SHA mismatch! Restarting whole transfer..." << RESET << std::endl;
             return false;
         }
-        
+
     }
 
     std::cerr << RED << "Final packet failed after " << maxRetries << " attempts!" << RESET << std::endl;
     return false;
 }
 
-bool Sender::waitForACK(int packetType, int seqNum) {
-    for (int retries = 0; retries < 3; ++retries) {
+bool Sender::handleACK(PacketType expectedType, int expectedSeqNum) {
+    sockaddr_in from;
+    int fromlen = sizeof(from);
+    int attempts = 0;
+    int maxRetries = 3;
+
+    while (attempts < maxRetries) {
         fd_set readfds;
         FD_ZERO(&readfds);
         FD_SET(socketS, &readfds);
 
-        timeval timeout{ 0, TIMEOUT_MS * 1000 };
+        timeval timeout;
+        timeout.tv_sec = TIMEOUT_MS / 1000;
+        timeout.tv_usec = (TIMEOUT_MS);
 
-        int selectResult = select(0, &readfds, NULL, NULL, &timeout);
-        if (selectResult > 0) {
-            Packet ansPacket;
-            sockaddr_in from;
-            int fromlen = sizeof(from);
+        int result = select(0, &readfds, nullptr, nullptr, &timeout);
+        if (result > 0) {
+            Packet ackPacket;
+            int recvLen = recvfrom(socketS, (char*)&ackPacket, sizeof(Packet), 0, (sockaddr*)&from, &fromlen);
 
-            if (recvfrom(socketS, (char*)&ansPacket, sizeof(Packet), 0, (sockaddr*)&from, &fromlen) != SOCKET_ERROR) {
-                if (ansPacket.type == packetType && ansPacket.seqNum == seqNum) {
-                    return isBufferAllNum(ansPacket.data, ansPacket.dataSize, 1);
+            if (recvLen != SOCKET_ERROR) {
+                if (ackPacket.type == expectedType && ackPacket.seqNum == expectedSeqNum) {
+                    bool ackValid = isBufferAllNum(ackPacket.data, ackPacket.dataSize, 1);
+                    if (ackValid) {
+                        std::cout << GREEN << "[ACK] Valid ACK received for seqNum " << expectedSeqNum << RESET << std::endl;
+                        return true;
+                    }
+                    else {
+                        std::cerr << RED << "[ACK] Invalid ACK content (e.g., CRC/SHA fail) for seqNum " << expectedSeqNum << RESET << std::endl;
+                        return false;  // ACK was received, but bad content, don't retry
+                    }
+                }
+                else {
+                    std::cerr << RED << "[ACK] Unexpected ACK: type " << ackPacket.type
+                        << ", seqNum " << ackPacket.seqNum << " (expected " << expectedType << ", " << expectedSeqNum << ")" << RESET << std::endl;
                 }
             }
+            else {
+                std::cerr << RED << "[ACK] recvfrom error!" << RESET << std::endl;
+            }
         }
-        else if (selectResult == 0) {
-            std::cerr << "Timeout waiting for ACK. Retrying..." << std::endl;
+        else if (result == 0) {
+            std::cerr << YELLOW << "[ACK] Timeout waiting for seqNum " << expectedSeqNum
+                << " (attempt " << (attempts + 1) << "/" << maxRetries << ")" << RESET << std::endl;
         }
         else {
-            std::cerr << "Select error while waiting for ACK" << std::endl;
+            std::cerr << RED << "[ACK] select() failed!" << RESET << std::endl;
             break;
         }
+
+        ++attempts;
     }
 
+    std::cerr << RED << "[ACK] Failed to receive ACK for seqNum " << expectedSeqNum << " after " << maxRetries << " attempts." << RESET << std::endl;
     return false;
 }

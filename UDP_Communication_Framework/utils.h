@@ -20,7 +20,6 @@
 #define SHA256_LEN 64
 #define TOLERANCE 100
 
-
 typedef struct {
 	char type; // 0 == FILSIZE, 1 == DATA, 2 == FINAL, 3 == ANSWER
 	int seqNum;

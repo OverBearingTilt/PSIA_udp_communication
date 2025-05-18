@@ -35,7 +35,7 @@ struct PacketEntry {
 
 class Sender {
 public:
-	// Constructor - initializes socket and address
+    // Constructor - initializes socket and address
     Sender(int local_port, int target_port, wchar_t* target_IP);
     ~Sender();
 
@@ -62,8 +62,7 @@ private:
     bool sendFileNamePacket(const std::string& fileName);
     bool sendDataPackets(const std::string& filePath);
     bool sendFinalPacket(const std::string& hash);
-    bool waitForACK(int packetType, int seqNum);
-    void waitForAcksThread();
+    bool handleACK(PacketType expectedType, int expectedSeqNum);
 };
 
 #endif // SENDER_H

@@ -17,7 +17,7 @@ Receiver::Receiver(int local_port, int target_port, wchar_t* target_IP) {
 
     addrDest.sin_family = AF_INET;
     addrDest.sin_port = htons(target_port);
-    InetPton(AF_INET, target_IP, &addrDest.sin_addr.s_addr);
+    InetPtonW(AF_INET, target_IP, &addrDest.sin_addr.s_addr);
     // originally _T(target_IP) which worked only on literals
 
 }
@@ -29,8 +29,6 @@ Receiver::~Receiver() {
 }
 
 int Receiver::run() {
-    InitWinsock();
-
     Packet packet;
 
     while (retryCounter < 3 && !sha256_ok) {
@@ -98,7 +96,7 @@ void Receiver::handleDuplicatePacket(const Packet& packet) {
     }
     else {
         setBufferToNum(answerPacket.data, answerPacket.dataSize, 1); // Assume ACK ok for duplicate
-        sendto(socketS, (char*)&answerPacket, sizeof(Packet), 0, (sockaddr*)&addrDest, sizeof(addrDest));
+        sendto(socketS, (char*)&answerPacket, sizeof(Packet), 0, (sockaddr*)&addrDest, fromlen);
     }
 }
 
@@ -117,7 +115,7 @@ void Receiver::handleFileSizePacket(const Packet& packet) {
 
     setBufferToNum(answerPacket.data, sizeof(answerPacket.data), ackResult);
     printf("%sSending ACK packet: %d for seqNum: %d\n%s", (ackResult) ? GREEN : RED, ackResult, packet.seqNum, RESET);
-    sendto(socketS, (char*)&answerPacket, sizeof(Packet), 0, (sockaddr*)&addrDest, sizeof(addrDest));
+    sendto(socketS, (char*)&answerPacket, sizeof(Packet), 0, (sockaddr*)&addrDest, fromlen);
 
     if (ackResult) {
         // Allocate file name
@@ -186,7 +184,7 @@ void Receiver::handleDataPacket(const Packet& packet) {
 
     setBufferToNum(answerPacket.data, answerPacket.dataSize, ackResult);
     printf("%sSending ACK packet: %d for seqNum: %d\n%s", (ackResult) ? GREEN : RED, ackResult, packet.seqNum, RESET);
-    sendto(socketS, (char*)&answerPacket, sizeof(Packet), 0, (sockaddr*)&addrDest, sizeof(addrDest));
+    sendto(socketS, (char*)&answerPacket, sizeof(Packet), 0, (sockaddr*)&addrDest, fromlen);
 }
 
 // Function to handle FINAL packets
@@ -204,7 +202,7 @@ void Receiver::handleFinalPacket(const Packet& packet) {
 
     setBufferToNum(answerPacket.data, answerPacket.dataSize, ackResult);
     printf("%sSending final CRC ACK: %d\n%s", (ackResult) ? GREEN : RED, ackResult, RESET);
-    sendto(socketS, (char*)&answerPacket, sizeof(Packet), 0, (sockaddr*)&addrDest, sizeof(addrDest));
+    sendto(socketS, (char*)&answerPacket, sizeof(Packet), 0, (sockaddr*)&addrDest, fromlen);
 
     if (ackResult) {
         fclose(file_out);
@@ -229,7 +227,7 @@ void Receiver::handleFinalPacket(const Packet& packet) {
         answerPacket.seqNum = packet.seqNum;
         setBufferToNum(answerPacket.data, answerPacket.dataSize, sha256_ok);
         printf("%sSending SHA result ACK: %d\n%s", (sha256_ok) ? GREEN : RED, sha256_ok, RESET);
-        sendto(socketS, (char*)&answerPacket, sizeof(Packet), 0, (sockaddr*)&addrDest, sizeof(addrDest));
+        sendto(socketS, (char*)&answerPacket, sizeof(Packet), 0, (sockaddr*)&addrDest, fromlen);
 
 
         retryCounter += (sha256_ok ? 0 : 1);
