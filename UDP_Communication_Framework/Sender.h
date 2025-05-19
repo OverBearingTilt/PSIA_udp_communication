@@ -23,7 +23,7 @@
 
 #define BUFFERS_LEN 1024 - sizeof(uint32_t) - 2 * sizeof(int) - sizeof(char)
 #define SHA256_LEN 64
-#define TIMEOUT_MS 500
+#define TIMEOUT_MS 1500
 #define WINDOW_SIZE 5
 
 struct PacketEntry {
@@ -60,9 +60,11 @@ private:
 
     void calculateSHA256(const std::string& filePath, std::string& hash);
     bool sendFileNamePacket(const std::string& fileName);
-    bool sendDataPackets(const std::string& filePath);
+    bool sendDataPackets(const std::string& filePath, const std::string& sha256Hash);
     bool sendFinalPacket(const std::string& hash);
     bool handleACK(PacketType expectedType, int expectedSeqNum);
+    void sendPacket(Packet& packet);
+    void waitForAcksThread();
 };
 
 #endif // SENDER_H

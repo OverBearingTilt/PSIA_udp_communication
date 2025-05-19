@@ -4,7 +4,12 @@ C:\Users\vojta\Desktop\CVUT\2. sem\psia\psia_semest\UDP_Communication_Framework\
       C:\Users\vojta\Desktop\CVUT\2. sem\psia\psia_semest\UDP_Communication_Framework\utils.h(18,9):
       see previous definition of 'BUFFERS_LEN'
   
-C:\Users\vojta\Desktop\CVUT\2. sem\psia\psia_semest\UDP_Communication_Framework\Sender.cpp(99,44): warning C4267: '=': conversion from 'size_t' to 'int', possible loss of data
+C:\Users\vojta\Desktop\CVUT\2. sem\psia\psia_semest\UDP_Communication_Framework\Sender.cpp(3,9): warning C4005: 'ERROR': macro redefinition
+  (compiling source file '/Sender.cpp')
+      C:\Program Files (x86)\Windows Kits\10\Include\10.0.26100.0\um\wingdi.h(118,9):
+      see previous definition of 'ERROR'
+  
+C:\Users\vojta\Desktop\CVUT\2. sem\psia\psia_semest\UDP_Communication_Framework\Sender.cpp(133,44): warning C4267: '=': conversion from 'size_t' to 'int', possible loss of data
   (compiling source file '/Sender.cpp')
   
   UDP_Communication_Framework.vcxproj -> C:\Users\vojta\Desktop\CVUT\2. sem\psia\psia_semest\x64\Debug\UDP_Communication_Framework.exe
