@@ -2,6 +2,9 @@
 #include "stdafx.h"
 #include "Receiver.h"
 
+#include <thread>
+#include <chrono>
+
 Receiver::Receiver(int local_port, int target_port, wchar_t* target_IP) {
     InitWinsock();
 
@@ -192,16 +195,19 @@ void Receiver::handleFinalPacket(const Packet& packet) {
     printf("Final packet received!, number : %d\n", packet.seqNum);
 
     Packet answerPacket;
-    answerPacket.type = ANSWER_CRC;
     answerPacket.seqNum = packet.seqNum;
-    answerPacket.dataSize = BUFFERS_LEN;
+    answerPacket.dataSize = packet.dataSize;
 
     received_sha256 = packet.hashArray;
     std::uint32_t crc = CRC::Calculate(packet.hashArray, packet.dataSize, CRC::CRC_32());
     char ackResult = (crc == packet.crc);
 
-    setBufferToNum(answerPacket.data, answerPacket.dataSize, ackResult);
+    std::this_thread::sleep_for(std::chrono::microseconds(500));
+    setBufferToNum(answerPacket.data, sizeof(answerPacket.data), ackResult);
     printf("%sSending final CRC ACK: %d\n%s", (ackResult) ? GREEN : RED, ackResult, RESET);
+    answerPacket.type = ANSWER_CRC;
+    std::cout << answerPacket.type << std::endl;
+    std::cout << static_cast<int>(answerPacket.type) << std::endl;
     sendto(socketS, (char*)&answerPacket, sizeof(Packet), 0, (sockaddr*)&addrDest, fromlen);
 
     if (ackResult) {
@@ -227,6 +233,8 @@ void Receiver::handleFinalPacket(const Packet& packet) {
         answerPacket.seqNum = packet.seqNum;
         setBufferToNum(answerPacket.data, answerPacket.dataSize, sha256_ok);
         printf("%sSending SHA result ACK: %d\n%s", (sha256_ok) ? GREEN : RED, sha256_ok, RESET);
+        std::cout << answerPacket.type << std::endl;
+        std::cout << static_cast<int>(answerPacket.type) << std::endl;
         sendto(socketS, (char*)&answerPacket, sizeof(Packet), 0, (sockaddr*)&addrDest, fromlen);
 
 
