@@ -62,7 +62,7 @@ private:
     bool sendFileNamePacket(const std::string& fileName);
     bool sendDataPackets(const std::string& filePath, const std::string& sha256Hash);
     bool sendFinalPacket(const std::string& hash);
-    bool handleACK(PacketType expectedType, int expectedSeqNum);
+    bool handleACK(int expectedType, int expectedSeqNum);
     void sendPacket(Packet& packet);
     void waitForAcksThread();
 };

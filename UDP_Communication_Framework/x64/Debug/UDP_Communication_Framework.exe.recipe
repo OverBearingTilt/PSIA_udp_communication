@@ -2,7 +2,11 @@
 <Project>
   <ProjectOutputs>
     <ProjectOutput>
+<<<<<<< HEAD
       <FullPath>C:\Programovani\PSIA\PSIA_udp_communication\x64\Debug\UDP_Communication_Framework.exe</FullPath>
+=======
+      <FullPath>C:\Programovani\CVUT\PSIA\PSIA_udp_communication\x64\Debug\UDP_Communication_Framework.exe</FullPath>
+>>>>>>> ec9bc0f9b14eabdfef960ad5b9b64cc0fa334c30
     </ProjectOutput>
   </ProjectOutputs>
   <ContentFiles />

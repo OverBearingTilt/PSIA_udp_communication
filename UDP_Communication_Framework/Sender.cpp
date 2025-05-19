@@ -290,14 +290,14 @@ bool Sender::sendDataPackets(const std::string& filePath, const std::string& sha
     sendto(socketS, (char*)&finPacket, sizeof(Packet), 0, (sockaddr*)&addrDest, sizeof(addrDest));
     while (attempts < maxRetries) {
 
-        // Wait for CRC ACK
-            if (!handleACK(ANSWER_CRC, finPacket.seqNum)) {
-                std::cerr << RED << "CRC ACK not received or invalid. Retrying..." << RESET << std::endl;
-                ++attempts;
-                std::cout << YELLOW << "Sending final packet (attempt " << (attempts + 1) << ")" << RESET << std::endl;
-                sendto(socketS, (char*)&finPacket, sizeof(Packet), 0, (sockaddr*)&addrDest, sizeof(addrDest));
-                continue;
-            }
+        //// Wait for CRC ACK
+        //    if (!handleACK(ANSWER_CRC, finPacket.seqNum)) {
+        //        std::cerr << RED << "CRC ACK not received or invalid. Retrying..." << RESET << std::endl;
+        //        ++attempts;
+        //        std::cout << YELLOW << "Sending final packet (attempt " << (attempts + 1) << ")" << RESET << std::endl;
+        //        sendto(socketS, (char*)&finPacket, sizeof(Packet), 0, (sockaddr*)&addrDest, sizeof(addrDest));
+        //        continue;
+        //    }
         
 
         // Wait for SHA ACK
@@ -309,16 +309,16 @@ bool Sender::sendDataPackets(const std::string& filePath, const std::string& sha
                 ackListenerThread.join();
                 fclose(file_in);
                 return true;
-            }
-            else {
-                std::cerr << RED << "SHA mismatch! Restarting whole transfer..." << RESET << std::endl;
-                sendingDoneFlag.store(true);
-                resendThread.join();
-                stopAckListener = true;
-                ackListenerThread.join();
-                fclose(file_in);
-                return false;
-            }
+        }
+        else {
+            std::cerr << RED << "SHA mismatch! Restarting whole transfer..." << RESET << std::endl;
+            sendingDoneFlag.store(true);
+            resendThread.join();
+            stopAckListener = true;
+            ackListenerThread.join();
+            fclose(file_in);
+            return false;
+        }
         
     }
 
@@ -346,15 +346,15 @@ bool Sender::sendFinalPacket(const std::string& hash) {
         std::cout << YELLOW << "Sending final packet (attempt " << (attempts + 1) << ")" << RESET << std::endl;
         sendto(socketS, (char*)&finPacket, sizeof(Packet), 0, (sockaddr*)&addrDest, sizeof(addrDest));
 
-        // Wait for CRC ACK
-        if (!handleACK(ANSWER_CRC, finPacket.seqNum)) {
-            std::cerr << RED << "CRC ACK not received or invalid. Retrying..." << RESET << std::endl;
-            ++attempts;
-            continue;
-        }
+        //// Wait for CRC ACK
+        //if (!handleACK(ANSWER_CRC, finPacket.seqNum)) {
+        //    std::cerr << RED << "CRC ACK not received or invalid. Retrying..." << RESET << std::endl;
+        //    ++attempts;
+        //    continue;
+        //}
 
         // Wait for SHA ACK
-        if (handleACK(ANSWER_SHA, finPacket.seqNum)) {
+        if (handleACK(4, finPacket.seqNum)) {
             std::cout << GREEN << "SHA ACK received! File transfer successful." << RESET << std::endl;
             return true;
         }
@@ -368,7 +368,7 @@ bool Sender::sendFinalPacket(const std::string& hash) {
     return false;
 }
 
-bool Sender::handleACK(PacketType expectedType, int expectedSeqNum) {
+bool Sender::handleACK(int expectedType, int expectedSeqNum) {
     sockaddr_in from;
     int fromlen = sizeof(from);
     int attempts = 0;
@@ -389,7 +389,11 @@ bool Sender::handleACK(PacketType expectedType, int expectedSeqNum) {
             int recvLen = recvfrom(socketS, (char*)&ackPacket, sizeof(Packet), 0, (sockaddr*)&from, &fromlen);
 
             if (recvLen != SOCKET_ERROR) {
-                if (ackPacket.type == expectedType && ackPacket.seqNum == expectedSeqNum) {
+
+                // DEBUG
+               std::cout << "CRC ACK type: " << static_cast<int>(ackPacket.type) << " exp: " << expectedType << std::endl;
+
+               if ((static_cast<int>(ackPacket.type) == expectedType && ackPacket.seqNum == expectedSeqNum) || static_cast<int>(ackPacket.type) == 4) {
                     bool ackValid = isBufferAllNum(ackPacket.data, ackPacket.dataSize, 1);
                     if (ackValid) {
                         std::cout << GREEN << "[ACK] Valid ACK received for seqNum " << expectedSeqNum << RESET << std::endl;
