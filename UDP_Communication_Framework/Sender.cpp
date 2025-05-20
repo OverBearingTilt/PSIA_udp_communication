@@ -72,7 +72,10 @@ Sender::~Sender() {
 
 
 void Sender::sendPacket(Packet& packet) {
-    sendto(socketS, (char*)&packet, sizeof(Packet), 0, (sockaddr*)&addrDest, sizeof(addrDest));
+	Packet pck = packetError(packet);
+    sendto(socketS, (char*)&pck, sizeof(Packet), 0, (sockaddr*)&addrDest, sizeof(addrDest));
+    //sendto(socketS, (char*)&packet, sizeof(Packet), 0, (sockaddr*)&addrDest, sizeof(addrDest));
+
 }
 
 int Sender::run(const std::string& filePath, const std::string& fileName) {
@@ -238,7 +241,7 @@ bool Sender::sendDataPackets(const std::string& filePath, const std::string& sha
             lastSentID = idx;
 
             std::cout << YELLOW << "Sending data packet number " << dataPacket.seqNum << RESET << std::endl;
-            sendto(socketS, (char*)&dataPacket, sizeof(Packet), 0, (sockaddr*)&addrDest, sizeof(addrDest));
+            sendPacket(dataPacket);
             nextSeqNum++;
 
             i = 0;
@@ -263,7 +266,7 @@ bool Sender::sendDataPackets(const std::string& filePath, const std::string& sha
         lastSentID = idx;
 
         std::cout << "Sending final partial packet " << dataPacket.seqNum << std::endl;
-        sendto(socketS, (char*)&dataPacket, sizeof(Packet), 0, (sockaddr*)&addrDest, sizeof(addrDest));
+        sendPacket(dataPacket);
         nextSeqNum++;
     }
 
@@ -287,7 +290,7 @@ bool Sender::sendDataPackets(const std::string& filePath, const std::string& sha
     int attempts = 0;
 
     std::cout << YELLOW << "Sending final packet (attempt " << (attempts + 1) << ")" << RESET << std::endl;
-    sendto(socketS, (char*)&finPacket, sizeof(Packet), 0, (sockaddr*)&addrDest, sizeof(addrDest));
+    sendPacket(finPacket);
     while (attempts < maxRetries) {
 
         //// Wait for CRC ACK
@@ -344,7 +347,7 @@ bool Sender::sendFinalPacket(const std::string& hash) {
 
     while (attempts < maxRetries) {
         std::cout << YELLOW << "Sending final packet (attempt " << (attempts + 1) << ")" << RESET << std::endl;
-        sendto(socketS, (char*)&finPacket, sizeof(Packet), 0, (sockaddr*)&addrDest, sizeof(addrDest));
+        sendPacket(finPacket);
 
         //// Wait for CRC ACK
         //if (!handleACK(ANSWER_CRC, finPacket.seqNum)) {

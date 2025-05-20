@@ -1,17 +1,12 @@
-<<<<<<< HEAD
-﻿  Receiver.cpp
-  UDP_Communication_Framework.vcxproj -> C:\Programovani\PSIA\PSIA_udp_communication\x64\Debug\UDP_Communication_Framework.exe
-=======
 ﻿  UDP_Communication_Framework.cpp
 C:\Programovani\CVUT\PSIA\PSIA_udp_communication\UDP_Communication_Framework\Sender.h(24,9): warning C4005: 'BUFFERS_LEN': macro redefinition
   (compiling source file '/UDP_Communication_Framework.cpp')
       C:\Programovani\CVUT\PSIA\PSIA_udp_communication\UDP_Communication_Framework\utils.h(18,9):
       see previous definition of 'BUFFERS_LEN'
   
-C:\Programovani\CVUT\PSIA\PSIA_udp_communication\UDP_Communication_Framework\UDP_Communication_Framework.cpp(12,9): warning C4005: 'BUFFERS_LEN': macro redefinition
+C:\Programovani\CVUT\PSIA\PSIA_udp_communication\UDP_Communication_Framework\UDP_Communication_Framework.cpp(13,9): warning C4005: 'BUFFERS_LEN': macro redefinition
   (compiling source file '/UDP_Communication_Framework.cpp')
       C:\Programovani\CVUT\PSIA\PSIA_udp_communication\UDP_Communication_Framework\Sender.h(24,9):
       see previous definition of 'BUFFERS_LEN'
   
   UDP_Communication_Framework.vcxproj -> C:\Programovani\CVUT\PSIA\PSIA_udp_communication\x64\Debug\UDP_Communication_Framework.exe
->>>>>>> ec9bc0f9b14eabdfef960ad5b9b64cc0fa334c30

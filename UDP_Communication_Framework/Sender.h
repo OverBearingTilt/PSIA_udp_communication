@@ -64,7 +64,6 @@ private:
     bool sendFinalPacket(const std::string& hash);
     bool handleACK(int expectedType, int expectedSeqNum);
     void sendPacket(Packet& packet);
-    void waitForAcksThread();
 };
 
 #endif // SENDER_H
